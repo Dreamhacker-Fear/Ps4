@@ -1,6 +1,6 @@
 
 {
-  "name": "ps4",
+  "name": "orbis-auth",
   "main": "orbis-auth-worker.js",
   "compatibility_date": "2025-09-01",
   "durable_objects": {

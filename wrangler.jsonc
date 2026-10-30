@@ -1,9 +1,20 @@
+
 {
-  "name": "orbis-auth",
+  "name": "ps4",
   "main": "orbis-auth-worker.js",
   "compatibility_date": "2025-09-01",
   "durable_objects": {
-    "bindings": [{ "name": "AUTH", "class_name": "AuthState" }]
+    "bindings": [
+      {
+        "name": "AUTH",
+        "class_name": "AuthState"
+      }
+    ]
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["AuthState"] }]
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["AuthState"]
+    }
+  ]
 }

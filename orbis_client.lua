@@ -4,7 +4,7 @@
 
 local HttpService = game:GetService("HttpService")
 
-local API = "https://orbis-auth.lucaebraeuer.workers.dev"
+local API = "https://ps4.lucaebraeuer.workers.dev"
 
 local Client = {}
 local cachedTokens = {}

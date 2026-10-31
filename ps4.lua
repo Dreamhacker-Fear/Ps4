@@ -5835,28 +5835,59 @@ function S.loginGate(onDone)
         centered("Who is playing?", 118, 13, COLORS.white)
         local profileLimitText = tostring(player.UserId) == "8407673016" and "Saved profiles: " .. #S.login.profiles .. " • Unlimited" or "Saved profiles: " .. #S.login.profiles .. " / 5"
         centered(profileLimitText, 140, 11, COLORS.muted)
+        -- The carousel is ordered with saved profiles first and Create Account last.
+        -- Starting on the final item puts Create Account in the center, with saved accounts to its left.
         local entries = {}
+        for _, p in ipairs(S.login.profiles) do table.insert(entries, { profile = p }) end
         local profileLimit = tostring(player.UserId) == "8407673016" and math.huge or 5
         if #S.login.profiles < profileLimit then table.insert(entries, { new = true }) end
-        for _, p in ipairs(S.login.profiles) do table.insert(entries, { profile = p }) end
-        local tw, gap = 114, 14
-        local columns = math.max(1, math.floor((W - 40 + gap) / (tw + gap)))
-        local rows = math.ceil(#entries / columns)
-        local gridWidth = columns * tw + (columns - 1) * gap
-        local x0 = (W - gridWidth) / 2
+        local tw, gap = 114, 18
         local profileGrid = make("ScrollingFrame", {
-            Name = "ProfileGrid", Size = UDim2.new(1, -40, 0, 174), Position = UDim2.fromOffset(20, 160),
-            BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 5,
-            CanvasSize = UDim2.fromOffset(0, math.max(174, rows * 178)),
-            ScrollingDirection = Enum.ScrollingDirection.Y,
+            Name = "ProfileGrid", Size = UDim2.new(1, -40, 0, 206), Position = UDim2.fromOffset(20, 160),
+            BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 0,
+            CanvasSize = UDim2.fromOffset(0, 206), ScrollingDirection = Enum.ScrollingDirection.X,
+            AutomaticCanvasSize = Enum.AutomaticSize.X, ScrollingEnabled = true,
+            ElasticBehavior = Enum.ElasticBehavior.WhenScrollable,
         }, holder)
+        local carouselLayout = make("UIListLayout", {
+            FillDirection = Enum.FillDirection.Horizontal,
+            HorizontalAlignment = Enum.HorizontalAlignment.Left,
+            VerticalAlignment = Enum.VerticalAlignment.Center,
+            Padding = UDim.new(0, gap),
+            SortOrder = Enum.SortOrder.LayoutOrder,
+        }, profileGrid)
+        make("UIPadding", {
+            PaddingLeft = UDim.new(0, math.max(0, (W - 40 - tw) / 2)),
+            PaddingRight = UDim.new(0, math.max(0, (W - 40 - tw) / 2)),
+        }, profileGrid)
+        local carouselTiles = {}
+        local function focusCarousel()
+            local centerX = profileGrid.AbsolutePosition.X + profileGrid.AbsoluteSize.X / 2
+            local nearest, nearestDistance
+            for _, item in ipairs(carouselTiles) do
+                local tile = item.tile
+                local tileCenter = tile.AbsolutePosition.X + tile.AbsoluteSize.X / 2
+                local distance = math.abs(centerX - tileCenter)
+                if not nearestDistance or distance < nearestDistance then
+                    nearest, nearestDistance = item, distance
+                end
+            end
+            for _, item in ipairs(carouselTiles) do
+                local focused = item == nearest
+                local scale = item.scale
+                tween(scale, 0.16, { Scale = focused and 1.16 or 0.88 })
+                item.tile.ZIndex = focused and 5 or 2
+                item.tile.BackgroundTransparency = focused and 0 or 0.12
+            end
+        end
+        profileGrid:GetPropertyChangedSignal("CanvasPosition"):Connect(focusCarousel)
         for i, en in ipairs(entries) do
-            local col = (i - 1) % columns
-            local rowIndex = math.floor((i - 1) / columns)
             local tile = make("TextButton", {
-                Size = UDim2.fromOffset(tw, 168), Position = UDim2.fromOffset(x0 - 20 + col * (tw + gap), rowIndex * 178),
+                LayoutOrder = i, Size = UDim2.fromOffset(tw, 168),
                 BackgroundColor3 = Color3.fromRGB(28, 112, 218), BorderSizePixel = 0, AutoButtonColor = false, Text = "",
             }, profileGrid)
+            local tileScale = make("UIScale", { Scale = 0.88 }, tile)
+            table.insert(carouselTiles, { tile = tile, scale = tileScale })
             local st = stroke(tile, COLORS.white, 3, 1)
             tile.MouseEnter:Connect(function() st.Transparency = 0 end)
             tile.MouseLeave:Connect(function() st.Transparency = 1 end)
@@ -5962,8 +5993,25 @@ function S.loginGate(onDone)
                 tile.MouseButton2Click:Connect(function() playSound("Select"); confirmDelete(p) end)
             end
         end
-        hint("cross", "Enter", 40)
-        centered(editMode and "Tap a profile to rename it • Hold to delete" or "Need a passcode? Join our Discord to get one.", 346, 12, COLORS.white)
+        task.defer(function()
+            if not profileGrid.Parent then return end
+            task.wait()
+            -- Start with the last item centered (Create Account when available).
+            if #entries > 0 then
+                local target = entries[#entries]
+                for _, item in ipairs(carouselTiles) do
+                    if item.tile.LayoutOrder == #entries then
+                        local x = item.tile.AbsolutePosition.X + item.tile.AbsoluteSize.X / 2
+                            - (profileGrid.AbsolutePosition.X + profileGrid.AbsoluteSize.X / 2)
+                        profileGrid.CanvasPosition = Vector2.new(math.max(0, profileGrid.CanvasPosition.X + x), 0)
+                        break
+                    end
+                end
+            end
+            focusCarousel()
+        end)
+        hint("cross", "Swipe left/right", 40)
+        centered(editMode and "Tap a profile to rename it • Hold to delete" or "Select an account in the center, then tap to continue.", 346, 12, COLORS.white)
         local dc = make("TextButton", {
             Size = UDim2.fromOffset(230, 28), Position = UDim2.fromOffset((W - 230) / 2, 372),
             BackgroundColor3 = Color3.fromRGB(88, 101, 242), BorderSizePixel = 0, AutoButtonColor = true,

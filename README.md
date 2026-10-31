@@ -44,21 +44,11 @@ Do not share passcodes, session tokens, Discord bot tokens, signing secrets, or 
 
 ## Cloudflare Worker setup
 
-The Worker uses the Durable Object binding and migration declared in `wrangler.jsonc`. The Owner feature branch has its own Cloudflare Workers Builds preview trigger; preview URLs are enabled so testing the feature branch does not replace the live Worker.
+The production API used by `orbis_client.lua` is `https://ps4.lucaebraeuer.workers.dev` (Cloudflare Worker script name: `ps4`). The `wrangler.jsonc` file currently names a separate script, `orbis-auth`; running `npx wrangler deploy` with that config does **not** deploy to the production `ps4` script. Do not change the production script name or Durable Object binding casually: the live `AUTH` namespace contains existing login/session data.
 
-1. Install Wrangler and authenticate with the Cloudflare account that owns the Worker.
-2. Set the required secrets using Wrangler (never commit secret values):
-   - `DISCORD_PUBLIC_KEY`
-   - `DISCORD_BOT_TOKEN`
-   - `SIGNING_SECRET`
-3. Deploy from the project directory:
+The production `ps4` Worker was updated on 2026-10-31 to the Owner-enabled code from `feature/owner-system` (version 31, deployed to 100% of traffic). The existing `AUTH` Durable Object namespace and secret bindings were preserved. This deployment updates the shared authentication backend, so the client still needs an end-to-end Roblox login and Owner-panel test.
 
-   ```sh
-   npx wrangler deploy
-   ```
-
-4. Confirm the deployed Worker responds at its root endpoint with its online message.
-5. Keep the Worker URL in `orbis_client.lua` pointed at the intended deployment.
+For a separate development deployment, install Wrangler, authenticate with the intended Cloudflare account, configure the required secrets (`DISCORD_PUBLIC_KEY`, `DISCORD_BOT_TOKEN`, and `SIGNING_SECRET`) without committing their values, and verify the target script and Durable Object namespace before deploying. Keep the production Worker URL in `orbis_client.lua` pointed at the intended deployment.
 
 The `/setup` route is disabled by default in the Worker. Only enable it temporarily when re-registering the Discord command, then disable it again.
 
@@ -74,11 +64,11 @@ The `/setup` route is disabled by default in the Worker. Only enable it temporar
 - This repository contains Roblox/Luau client code and a JavaScript Cloudflare Worker.
 - GitHub Actions checks are only available when workflows are configured and triggered. A missing workflow run is not a passing build.
 - A successful JavaScript syntax check does not prove the Luau UI works in the Roblox runtime.
-- Cloudflare currently does not create active Preview URLs for Workers that use Durable Objects. The feature-branch `wrangler preview` build can validate the deployment command, but it is not a live runtime test; the Owner API and Durable Object changes are not deployed to the production Worker by this branch workflow.
+- Cloudflare preview builds are not a substitute for a live Durable Object runtime test. The Owner-enabled Worker is deployed to production `ps4`, but successful syntax/deployment checks do not prove that Roblox login and every Owner action work end to end.
 - The public client source contains Discord webhook URLs for the News form. Treat those URLs as exposed: rotate them in Discord and move replacements into Worker secrets before relying on those submissions.
 - Owner UI references are forward-declared before callbacks use them, so Lua resolves them to the intended local controls and cache.
 - The feature-branch dashboard loads its matching `orbis_client.lua`, including the Owner API methods.
 - Owner API requests are forwarded to their matching Durable Object routes; they are not treated as ordinary session checks.
 - The Worker validates the Owner session and configured Roblox User ID on every Owner-only operation.
-- Test profile creation, profile switching, passcode login, session resume, and Owner-only endpoints in a non-production test environment before merging or deploying.
+- Before merging the client changes, test profile creation, profile switching, passcode login, session resume, and Owner-only endpoints in Roblox. If any production login flow fails, roll back the Worker to the previous deployment version while investigating.
 - Changes on `feature/owner-system` are proposed through [PR #2](https://github.com/Dreamhacker-Fear/Ps4/pull/2). The default `main` branch is not changed until that pull request is merged.

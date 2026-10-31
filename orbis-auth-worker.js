@@ -6,6 +6,8 @@
 //   POST / or /interactions    -> Discord interactions (/psn)
 //   POST /verify  {uid, code}  -> exchanges a passcode for a session token   (POST only)
 //   POST /session {uid, token} -> re-checks a session token                  (POST only)
+//   POST /presence, /friends/search, /friends/request, /friends/respond, /friends/remove,
+//   POST /admin/users          -> script friends + owner list. All need a valid session token.
 //
 // Needs: Durable Object binding AUTH (class AuthState), secrets DISCORD_PUBLIC_KEY,
 // DISCORD_BOT_TOKEN, SIGNING_SECRET.  All state lives in the Durable Object, so every
@@ -19,6 +21,10 @@ const CODE_TTL = 86400;             // an unused passcode lives 24 hours
 const SESSION_TTL = 86400;          // a session token lives 24 hours
 const REQUIRE_PROFILE_PROOF = true; // prove the Roblox account is yours (see isOwner below)
 const SIG_MAX_AGE = 300;            // Discord requests older/newer than 5 min are rejected
+const OWNER_UID = "8407673016";    // the Roblox account that gets the owner panel (enforced HERE, on the server)
+const ONLINE_WINDOW = 150;          // seen in the last 150 s = online (the dashboard pings every 60 s)
+const MAX_FRIENDS = 100;
+const MAX_PENDING = 30;
 const SETUP_ENABLED = false;        // /setup is disabled (404). Set true only while re-registering /psn.
 
 const LIMITS = {
@@ -28,6 +34,10 @@ const LIMITS = {
   globalFail: 150,   // failed attempts from everybody per minute (emergency brake)
   sessionPerMin: 60, // session checks per IP per minute
   psnPerMin: 10,     // /psn uses per Discord user per minute
+  presencePerMin: 12,
+  friendOpsPerMin: 30,
+  searchPerMin: 10,
+  adminPerMin: 20,
 };
 
 const nowSec = () => Math.floor(Date.now() / 1000);
@@ -60,9 +70,12 @@ const MSG = {
   session_invalid: "Your session expired. Run /psn in Discord for a new passcode.",
   bad_request: "That request was not valid.",
   server_error: "The login server had a problem. Try again in a moment.",
+  forbidden: "This is only available to the owner.",
+  not_found: "That user was not found.",
+  limit_reached: "That list is full.",
 };
 const STATUS = { invalid: 401, proof_missing: 403, ownership_unavailable: 503, session_invalid: 401,
-  rate_limited: 429, bad_request: 400, server_error: 503 };
+  rate_limited: 429, bad_request: 400, server_error: 503, forbidden: 403, not_found: 404, limit_reached: 409 };
 
 // ---------------------------------------------------------------------------
 // Roblox account ownership.
@@ -81,6 +94,25 @@ async function fetchProfileDescription(uid) {
     if (!r.ok) return null;
     const j = await r.json();
     return typeof j.description === "string" ? j.description : null;
+  } catch (_) {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// Real Roblox name for a user id (so nobody can register under someone else's name).
+async function fetchRobloxName(uid) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 4000);
+  try {
+    const r = await fetch(`https://users.roblox.com/v1/users/${uid}`, {
+      signal: ctrl.signal, headers: { Accept: "application/json" },
+    });
+    if (!r.ok) return null;
+    const j = await r.json();
+    if (typeof j.name !== "string") return null;
+    return { name: j.name, display: typeof j.displayName === "string" ? j.displayName : j.name };
   } catch (_) {
     return null;
   } finally {
@@ -114,6 +146,12 @@ export class AuthState {
       else if (path === "/issue") out = await this.issue(body);
       else if (path === "/claim") out = await this.claim(body);
       else if (path === "/session") out = await this.session(body);
+      else if (path === "/presence") out = await this.presence(body);
+      else if (path === "/friends/search") out = await this.friendSearch(body);
+      else if (path === "/friends/request") out = await this.friendRequest(body);
+      else if (path === "/friends/respond") out = await this.friendRespond(body);
+      else if (path === "/friends/remove") out = await this.friendRemove(body);
+      else if (path === "/admin/users") out = await this.adminUsers(body);
       else out = { ok: false, reason: "bad_request" };
     } catch (e) {
       out = { ok: false, reason: e instanceof SyntaxError ? "bad_request" : "server_error" };
@@ -276,6 +314,164 @@ export class AuthState {
     });
   }
 
+
+  // ===== script users: presence, friends, owner list. Every call needs a valid session token. =====
+  // Checks the session first (invalid sessions write nothing), then counts the call per user.
+  async authedTx(body, name, perMin, fn) {
+    const uid = String(body.uid == null ? "" : body.uid);
+    const token = String(body.token == null ? "" : body.token);
+    const hash = isToken(token) ? await sha256Hex(token) : null; // crypto before the transaction
+    return this.tx(async (txn) => {
+      const t = nowSec();
+      const s = hash && isUid(uid) ? await txn.get(`sess:${hash}`) : null;
+      if (!s || s.uid !== uid || s.exp <= t) return { ok: false, reason: "session_invalid" };
+      const q = await this.txBump(txn, `${name}:${uid}`, 60);
+      if (q.count > perMin) return this.limited(q.retry);
+      return fn(txn, uid, t);
+    });
+  }
+  async frGet(txn, id) {
+    const f = await txn.get(`fr:${id}`);
+    return { friends: (f && f.friends) || [], incoming: (f && f.incoming) || [], outgoing: (f && f.outgoing) || [] };
+  }
+  async userView(txn, id, t) {
+    const u = await txn.get(`usr:${id}`);
+    if (!u || !u.name) return null;
+    const ago = Math.max(0, t - (u.last || 0));
+    return { uid: id, name: u.name, display: u.display || u.name, online: ago <= ONLINE_WINDOW, ago };
+  }
+  async views(txn, ids, t) {
+    const out = [];
+    for (const id of ids) { const v = await this.userView(txn, id, t); if (v) out.push(v); }
+    out.sort((a, b) => (a.online !== b.online ? (a.online ? -1 : 1) : a.name.toLowerCase() < b.name.toLowerCase() ? -1 : 1));
+    return out;
+  }
+
+  // heartbeat: "I am online". Also returns my friends, friend requests and whether I am the owner.
+  async presence(body) {
+    const uid = String(body.uid == null ? "" : body.uid);
+    const pre = await this.authedTx(body, "pres", LIMITS.presencePerMin, async (txn, id, t) => {
+      const u = await txn.get(`usr:${id}`);
+      return { ok: true, fetch: !u || !u.name || t - (u.nameAt || 0) > 86400 };
+    });
+    if (!pre.ok) return pre;
+    const prof = pre.fetch ? await fetchRobloxName(uid) : null; // network call, outside any transaction
+    return this.authedTx(body, "presw", LIMITS.presencePerMin * 2, async (txn, id, t) => {
+      const u = (await txn.get(`usr:${id}`)) || { uid: id, first: t };
+      if (prof) { u.name = prof.name; u.display = prof.display; u.nameAt = t; }
+      if (!u.name) { u.name = `user${id.slice(-4)}`; u.display = u.name; }
+      u.last = t;
+      await txn.put(`usr:${id}`, u);
+      const fr = await this.frGet(txn, id);
+      return {
+        ok: true, owner: id === OWNER_UID,
+        friends: await this.views(txn, fr.friends, t),
+        incoming: await this.views(txn, fr.incoming, t),
+        outgoing: fr.outgoing.length,
+      };
+    });
+  }
+
+  async friendSearch(body) {
+    const q = String(body.q == null ? "" : body.q).trim().toLowerCase();
+    if (q.length < 2 || q.length > 20) return { ok: false, reason: "bad_request" };
+    return this.authedTx(body, "fsearch", LIMITS.searchPerMin, async (txn, id, t) => {
+      const fr = await this.frGet(txn, id);
+      const all = await txn.list({ prefix: "usr:", limit: 5000 });
+      const out = [];
+      for (const [k, u] of all) {
+        const other = k.slice(4);
+        if (other === id || !u.name) continue;
+        const n = u.name.toLowerCase();
+        const d = (u.display || u.name).toLowerCase();
+        if (!n.includes(q) && !d.includes(q)) continue;
+        out.push({
+          uid: other, name: u.name, display: u.display || u.name,
+          online: t - (u.last || 0) <= ONLINE_WINDOW,
+          state: fr.friends.includes(other) ? "friend" : fr.outgoing.includes(other) ? "sent" : fr.incoming.includes(other) ? "incoming" : "none",
+          s: n.startsWith(q) || d.startsWith(q) ? 0 : 1,
+        });
+      }
+      out.sort((a, b) => a.s - b.s || (a.name.toLowerCase() < b.name.toLowerCase() ? -1 : 1));
+      return { ok: true, users: out.slice(0, 10).map(({ s, ...rest }) => rest) };
+    });
+  }
+
+  async friendRequest(body) {
+    const to = String(body.to == null ? "" : body.to);
+    if (!isUid(to)) return { ok: false, reason: "bad_request" };
+    return this.authedTx(body, "fops", LIMITS.friendOpsPerMin, async (txn, id) => {
+      if (to === id) return { ok: false, reason: "bad_request" };
+      if (!(await txn.get(`usr:${to}`))) return { ok: false, reason: "not_found" };
+      const me = await this.frGet(txn, id);
+      const them = await this.frGet(txn, to);
+      if (me.friends.includes(to)) return { ok: true, state: "friend" };
+      if (me.incoming.includes(to)) { // they already asked me: this makes us friends
+        if (me.friends.length >= MAX_FRIENDS || them.friends.length >= MAX_FRIENDS) return { ok: false, reason: "limit_reached" };
+        me.incoming = me.incoming.filter((x) => x !== to);
+        them.outgoing = them.outgoing.filter((x) => x !== id);
+        me.friends.push(to); them.friends.push(id);
+        await txn.put(`fr:${id}`, me); await txn.put(`fr:${to}`, them);
+        return { ok: true, state: "friend" };
+      }
+      if (me.outgoing.includes(to)) return { ok: true, state: "sent" };
+      if (me.outgoing.length >= MAX_PENDING || them.incoming.length >= MAX_PENDING) return { ok: false, reason: "limit_reached" };
+      me.outgoing.push(to); them.incoming.push(id);
+      await txn.put(`fr:${id}`, me); await txn.put(`fr:${to}`, them);
+      return { ok: true, state: "sent" };
+    });
+  }
+
+  async friendRespond(body) {
+    const from = String(body.from == null ? "" : body.from);
+    if (!isUid(from)) return { ok: false, reason: "bad_request" };
+    const accept = body.accept === true;
+    return this.authedTx(body, "fops", LIMITS.friendOpsPerMin, async (txn, id) => {
+      const me = await this.frGet(txn, id);
+      if (!me.incoming.includes(from)) return { ok: false, reason: "not_found" };
+      const them = await this.frGet(txn, from);
+      me.incoming = me.incoming.filter((x) => x !== from);
+      them.outgoing = them.outgoing.filter((x) => x !== id);
+      if (accept) {
+        if (me.friends.length >= MAX_FRIENDS || them.friends.length >= MAX_FRIENDS) return { ok: false, reason: "limit_reached" };
+        if (!me.friends.includes(from)) me.friends.push(from);
+        if (!them.friends.includes(id)) them.friends.push(id);
+      }
+      await txn.put(`fr:${id}`, me); await txn.put(`fr:${from}`, them);
+      return { ok: true, accepted: accept };
+    });
+  }
+
+  async friendRemove(body) {
+    const other = String(body.other == null ? "" : body.other);
+    if (!isUid(other)) return { ok: false, reason: "bad_request" };
+    return this.authedTx(body, "fops", LIMITS.friendOpsPerMin, async (txn, id) => {
+      const me = await this.frGet(txn, id);
+      const them = await this.frGet(txn, other);
+      me.friends = me.friends.filter((x) => x !== other);
+      them.friends = them.friends.filter((x) => x !== id);
+      await txn.put(`fr:${id}`, me); await txn.put(`fr:${other}`, them);
+      return { ok: true };
+    });
+  }
+
+  // owner only: everybody who ever used the dashboard. The owner check is HERE on the server.
+  async adminUsers(body) {
+    return this.authedTx(body, "admin", LIMITS.adminPerMin, async (txn, id, t) => {
+      if (id !== OWNER_UID) return { ok: false, reason: "forbidden" };
+      const all = await txn.list({ prefix: "usr:", limit: 5000 });
+      const users = [];
+      let online = 0;
+      for (const [k, u] of all) {
+        const ago = Math.max(0, t - (u.last || 0));
+        const on = ago <= ONLINE_WINDOW;
+        if (on) online++;
+        users.push({ uid: k.slice(4), name: u.name || "?", display: u.display || u.name || "?", online: on, ago, first: u.first || 0 });
+      }
+      return { ok: true, total: users.length, online, users };
+    });
+  }
+
   // ----- hourly cleanup of expired data -----
   async alarm() {
     const remaining = await this.tx(async (txn) => {
@@ -398,6 +594,30 @@ async function safeEqual(a, b) { // constant-time: compare SHA-256 digests byte 
   return d === 0;
 }
 
+const SIGNED_PATHS = new Set(["/presence", "/friends/search", "/friends/request", "/friends/respond", "/friends/remove", "/admin/users"]);
+async function handleSigned(request, env, path) {
+  if (request.method !== "POST") return json({ ok: false, reason: "bad_request", message: MSG.bad_request }, 405);
+  let b;
+  try {
+    const text = await request.text();
+    if (text.length > 1024) return json({ ok: false, reason: "bad_request", message: MSG.bad_request }, 413);
+    b = JSON.parse(text);
+    if (!b || typeof b !== "object" || Array.isArray(b)) throw new Error("bad");
+  } catch (_) {
+    return json({ ok: false, reason: "bad_request", message: MSG.bad_request }, 400);
+  }
+  const str = (v) => String(v == null ? "" : v);
+  const payload = { uid: str(b.uid), token: str(b.token), q: str(b.q), to: str(b.to), from: str(b.from), other: str(b.other), accept: b.accept === true };
+  try {
+    const out = await callAuth(env, path, payload);
+    const status = out.ok ? 200 : (out.status || 400);
+    delete out.status;
+    return json(out, status);
+  } catch (_) {
+    return json({ ok: false, reason: "server_error", message: MSG.server_error }, 503);
+  }
+}
+
 async function handleSetup(request, env) {
   if (!SETUP_ENABLED) return new Response("Not found", { status: 404 });
   if (request.method !== "POST") return new Response("Method not allowed", { status: 405 });
@@ -419,7 +639,9 @@ export default {
     if (request.method === "GET" && pathname === "/") return new Response("Orbis Auth is online.");
     if (pathname === "/setup") return handleSetup(request, env);
     if (pathname === "/verify" || pathname === "/session") return handleAuthPost(request, env, pathname);
+    if (SIGNED_PATHS.has(pathname)) return handleSigned(request, env, pathname);
     if (request.method === "POST" && (pathname === "/" || pathname === "/interactions")) return handleDiscord(request, env);
     return new Response("Not found", { status: 404 });
   },
 };
+t

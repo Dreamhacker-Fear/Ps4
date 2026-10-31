@@ -1396,6 +1396,21 @@ local function orbisRow(order, account, isOwner)
                 { "Cancel" },
             })
         end)
+    else
+        rowButton(row, function()
+            task.spawn(function()
+                local r = S.orbis.inbox(player.UserId, account.id)
+                if not r or not r.ok then notify(r and r.message or "Could not load Orbis activity."); return end
+                local latest = r.notifications and r.notifications[1]
+                local trophies = r.trophies or {}
+                local msg = latest and latest.text or "No new Orbis notifications."
+                if #trophies > 0 then msg = msg .. "  •  Trophies: " .. table.concat(trophies, ", ") end
+                openPanel(shortText(account.username or "Orbis account", 18), {
+                    { msg, function() end },
+                    { "Close" },
+                })
+            end)
+        end)
     end
 end
 
@@ -1413,9 +1428,9 @@ function S.refreshOrbis(query)
         local isOwner = player.UserId == 8407673016
         orbisStatus.Text = tostring(#(own.accounts or {})) .. " Orbis account(s) linked to this Roblox account."
         if own.premium then
-            orbisPremiumInfo.Text = "PREMIUM ACTIVE\nUnlimited Orbis accounts • 30-day trusted-device sign-in • Exclusive themes, animated backgrounds, profile frames, badges and trophies."
+            orbisPremiumInfo.Text = "PREMIUM ACTIVE\nUnlimited Orbis accounts • 30-day trusted-device sign-in. Exclusive themes, animated backgrounds, profile frames, badges and trophy showcases are planned Premium cosmetics."
         else
-            orbisPremiumInfo.Text = "FREE PLAN\nUp to 3 Orbis accounts. Premium adds more accounts, a 30-day trusted-device sign-in and exclusive themes, animated backgrounds, profile frames, badges and trophies."
+            orbisPremiumInfo.Text = "FREE PLAN\nUp to 3 Orbis accounts. Premium adds unlimited accounts and a 30-day trusted-device sign-in; exclusive themes, animated backgrounds, profile frames, badges and trophy showcases are planned cosmetics."
         end
         clearList(orbisScroll)
         if isOwner then

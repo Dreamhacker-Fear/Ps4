@@ -269,6 +269,16 @@ D.keyless = function(px, bar)
     bar(0.5, 0.5, 1.0, -45)
 end
 
+-- the four face buttons are real images now (your asset ids)
+S.BUTTON_IMAGES = {
+    cross = "rbxassetid://127359940243404",
+    circle = "rbxassetid://127127585833889",
+    square = "rbxassetid://95459535081564",
+    triangle = "rbxassetid://116013011869236",
+}
+-- false = keep the artwork's own colours; true = tint it with the colour passed to S.icon
+S.BUTTON_TINT = false
+
 -- S.icon(name, parent, pixelSize, color, position) draws an icon and returns its holder frame
 function S.icon(name, parent, size, color, pos)
     color = color or COLORS.white
@@ -280,6 +290,15 @@ function S.icon(name, parent, size, color, pos)
         BorderSizePixel = 0,
         ZIndex = (parent.ZIndex or 1) + 1,
     }, parent)
+    local imgId = S.BUTTON_IMAGES[name]
+    if imgId then
+        make("ImageLabel", {
+            Name = "Art", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1),
+            Image = imgId, ImageColor3 = S.BUTTON_TINT and color or Color3.new(1, 1, 1),
+            ScaleType = Enum.ScaleType.Fit, ZIndex = box.ZIndex,
+        }, box)
+        return box
+    end
     local th = math.max(1.5, size * 0.085)
     local function px(cx, cy, w, h, o)
         o = o or {}
@@ -807,7 +826,7 @@ local currentPage = nil
 local panelOpen = false
 
 -- ===== Support link, PS4-style popups (loading + error) and the safety scan =====
-S.DISCORD = "https://discord.gg/gfdjcFDVjf"
+S.DISCORD = "https://discord.gg/9aefrXgRjf"
 
 function S.popupBase(w, h)
     local old = main:FindFirstChild("PS4Popup")
@@ -2913,7 +2932,7 @@ for _, def in ipairs(S.storeCards) do
     local card = makeCover(S.storeGroup, "TextButton", S.colorFor(def[1]), def[1])
     local cr = card:FindFirstChildOfClass("UICorner")
     if cr then cr.CornerRadius = UDim.new(0, 0) end
-    card.Position = UDim2.fromOffset(def[3], 283)
+    card.Position = UDim2.fromOffset(def[3], 268)
     card.Size = UDim2.fromOffset(def[4], 141)
     card.ZIndex = 4
     card.Activated:Connect(function() playSound("Select"); S.openGenre(def[2]) end)
@@ -2965,8 +2984,8 @@ S.feedGroup = make("Frame", {
 -- left: big feed post (like "Amy Michaels played UNCHARTED 4")
 do
     local card = make("Frame", {
-        Size = UDim2.fromOffset(S.cardWidth, 160),
-        Position = UDim2.fromOffset(81, 293),
+        Size = UDim2.fromOffset(S.cardWidth, 112),
+        Position = UDim2.fromOffset(TILE_X, 296),
         BackgroundColor3 = Color3.fromRGB(18, 84, 184),
         BackgroundTransparency = 0.35,
         BorderSizePixel = 0, ZIndex = 3,
@@ -2982,8 +3001,8 @@ do
     body.TextYAlignment = Enum.TextYAlignment.Top
     -- large "screenshot" area under the post
     S.feedArt = make("Frame", {
-        Size = UDim2.new(1, -184, 0, 100),
-        Position = UDim2.fromOffset(92, 58),
+        Size = UDim2.new(1, 0, 0, 50),
+        Position = UDim2.fromOffset(0, 62),
         BackgroundColor3 = Color3.fromRGB(6, 30, 70),
         BorderSizePixel = 0, ZIndex = 4,
     }, card)
@@ -2995,7 +3014,7 @@ end
 do
     local card = make("Frame", {
         Size = UDim2.fromOffset(190, 100),
-        Position = UDim2.fromOffset(556, 293),
+        Position = UDim2.fromOffset(TILE_X + S.cardWidth + 24, 296),
         BackgroundTransparency = 1,
         BorderSizePixel = 0, ZIndex = 3,
     }, S.feedGroup)
@@ -3056,13 +3075,18 @@ function S.layoutTiles(animate)
         tileStrokes[i].Color = COLORS.white
         local gs = UDim2.fromOffset(size, size)
         local gp = UDim2.fromOffset(x, TILE_Y)
+        local dim = S.tileDims and S.tileDims[i]
+        local dimT = isFocus and 1 or 0.55
         if animate then
             tween(tile, 0.2, { Size = gs, Position = gp })
-            tween(tileStrokes[i], 0.2, { Thickness = isFocus and 2 or 0 })
+            tween(tileStrokes[i], 0.2, { Thickness = isFocus and 2 or 1, Transparency = isFocus and 0 or 0.8 })
+            if dim then tween(dim, 0.2, { BackgroundTransparency = dimT }) end
         else
             tile.Size = gs
             tile.Position = gp
-            tileStrokes[i].Thickness = isFocus and 2 or 0
+            tileStrokes[i].Thickness = isFocus and 2 or 1
+            tileStrokes[i].Transparency = isFocus and 0 or 0.8
+            if dim then dim.BackgroundTransparency = dimT end
         end
     end
 end
@@ -3192,12 +3216,12 @@ end
 function S.drawNewsTile(tile)
     local hold = make("Frame", {
         AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
-        Size = UDim2.fromOffset(58, 58), BackgroundTransparency = 1,
+        Size = UDim2.fromOffset(64, 64), BackgroundTransparency = 1,
     }, tile)
-    S.icon("square", hold, 26, COLORS.white, UDim2.fromOffset(0, 0))
-    S.icon("triangle", hold, 26, COLORS.white, UDim2.fromOffset(32, 0))
-    S.icon("cross", hold, 26, COLORS.white, UDim2.fromOffset(0, 32))
-    S.icon("circle", hold, 26, COLORS.white, UDim2.fromOffset(32, 32))
+    S.icon("square", hold, 29, COLORS.white, UDim2.fromOffset(0, 0))
+    S.icon("triangle", hold, 29, COLORS.white, UDim2.fromOffset(35, 0))
+    S.icon("cross", hold, 29, COLORS.white, UDim2.fromOffset(0, 35))
+    S.icon("circle", hold, 29, COLORS.white, UDim2.fromOffset(35, 35))
 end
 
 -- Store tile: shopping bag with the four shapes on it
@@ -3247,11 +3271,23 @@ function S.drawStoreTile(tile)
 end
 
 local lastEmptyTap = 0
+S.tileDims = {}
+
+-- home footer: button hints, same style as the other pages
+S.homeHints = make("Frame", {
+    Name = "HomeHints", Size = UDim2.new(1, 0, 0, 36), Position = UDim2.new(0, 0, 1, -40),
+    BackgroundTransparency = 1, ZIndex = 3,
+}, main)
+S.icon("cross", S.homeHints, 18, COLORS.white, UDim2.fromOffset(TILE_X, 9))
+label(S.homeHints, "Enter", UDim2.fromOffset(60, 36), UDim2.fromOffset(TILE_X + 26, 0), 13, COLORS.muted)
+S.icon("options", S.homeHints, 18, COLORS.white, UDim2.fromOffset(TILE_X + 96, 9))
+label(S.homeHints, "Options", UDim2.fromOffset(70, 36), UDim2.fromOffset(TILE_X + 122, 0), 13, COLORS.muted)
 
 function S.rebuildHome()
     for _, t in ipairs(tiles) do t:Destroy() end
     tiles = {}
     tileStrokes = {}
+    S.tileDims = {}
     items = {}
     tileProgress = {}
 
@@ -3330,6 +3366,10 @@ function S.rebuildHome()
             updateProgressViews(item.id)
         end
         tileStrokes[i] = stroke(tile, COLORS.white, 0, 0)
+        S.tileDims[i] = make("Frame", {
+            Name = "FocusDim", Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.fromRGB(2, 16, 50),
+            BackgroundTransparency = 0.5, BorderSizePixel = 0, ZIndex = 7,
+        }, tile)
         tile.Activated:Connect(function()
             if S.longFired then S.longFired = false return end
             if i ~= focusIndex then
@@ -6420,11 +6460,11 @@ S.NEWS = {
     cooldown = 30, -- seconds between posts
     cats = {
         { name = "Release",    color = Color3.fromRGB(46, 160, 90),  embed = 0x2EA05A,
-          hook = "" },
+          hook = "https://discord.com/api/webhooks/1565736121827336382/FbSiBz9Nh3NvaU9x--04V6Li2GJ7lSSXUrXkZFB4Q76vF4NAnC_8g1fjoh7IjdLue9Mz" },
         { name = "Showcase",   color = Color3.fromRGB(150, 80, 210), embed = 0x9650D2,
-          hook = "" },
+          hook = "https://discord.com/api/webhooks/1565736272738263111/8Zs_hJe0Z_zVxXCbGgzfs7uyNwntDqNC0MuxADR4EovVMaTbI3_zIzxCIk_R1XlBKmZK" },
         { name = "Bug Report", color = Color3.fromRGB(200, 70, 70),  embed = 0xC84646,
-          hook = "" },
+          hook = "https://discord.com/api/webhooks/1565737750697869462/6RFwKz_FAEoWL9uwQEuK1X5z55TPd5EZ5hNbW0kxHFLccgmTDvDd14ZigksVT-7-bDt7" },
     },
 }
 S.newsSel, S.newsNext, S.newsBusy = 1, 0, false
@@ -6493,11 +6533,6 @@ end
 function S.sendNews()
     if S.newsBusy then return end
     local cat = S.NEWS.cats[S.newsSel]
-    if not cat or not cat.hook or cat.hook == "" then
-        S.newsStatus.TextColor3 = Color3.fromRGB(255, 150, 150)
-        S.newsStatus.Text = "Discord posting is disabled until a secure server endpoint is configured."
-        return
-    end
     local title = S.newsTitle.Text:match("^%s*(.-)%s*$")
     local body = S.newsBody.Text:match("^%s*(.-)%s*$")
     if title == "" then notify("Add a title first") return end

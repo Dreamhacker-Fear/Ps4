@@ -252,6 +252,10 @@ function Client.accounts(uid)
     return accountRequest("/orbis/accounts", uid, {})
 end
 
+function Client.inbox(uid, accountId)
+    return accountRequest("/orbis/inbox", uid, { accountId = tostring(accountId or "") })
+end
+
 function Client.ownerAccounts(uid, query)
     return accountRequest("/orbis/owner/accounts", uid, { query = tostring(query or "") })
 end

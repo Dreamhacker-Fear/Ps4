@@ -73,6 +73,8 @@ The `/setup` route is disabled by default in the Worker. Only enable it temporar
 - This repository contains Roblox/Luau client code and a JavaScript Cloudflare Worker.
 - GitHub Actions checks are only available when workflows are configured and triggered. A missing workflow run is not a passing build.
 - A successful JavaScript syntax check does not prove the Luau UI works in the Roblox runtime.
+- Cloudflare currently does not create active Preview URLs for Workers that use Durable Objects. The feature-branch `wrangler preview` build can validate the deployment command, but it is not a live runtime test; the Owner API and Durable Object changes are not deployed to the production Worker by this branch workflow.
+- The public client source contains Discord webhook URLs for the News form. Treat those URLs as exposed: rotate them in Discord and move replacements into Worker secrets before relying on those submissions.
 - Owner UI references are forward-declared before callbacks use them, so Lua resolves them to the intended local controls and cache.
 - The feature-branch dashboard loads its matching `orbis_client.lua`, including the Owner API methods.
 - Owner API requests are forwarded to their matching Durable Object routes; they are not treated as ordinary session checks.

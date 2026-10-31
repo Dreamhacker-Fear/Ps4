@@ -5861,6 +5861,7 @@ function S.loginGate(onDone)
             PaddingRight = UDim.new(0, math.max(0, (W - 40 - tw) / 2)),
         }, profileGrid)
         local carouselTiles = {}
+        local focusedItem = nil
         local function focusCarousel()
             local centerX = profileGrid.AbsolutePosition.X + profileGrid.AbsoluteSize.X / 2
             local nearest, nearestDistance
@@ -5872,6 +5873,8 @@ function S.loginGate(onDone)
                     nearest, nearestDistance = item, distance
                 end
             end
+            if nearest == focusedItem then return end
+            focusedItem = nearest
             for _, item in ipairs(carouselTiles) do
                 local focused = item == nearest
                 local scale = item.scale

@@ -16,6 +16,13 @@
       "new_sqlite_classes": ["AuthState"]
     }
   ],
-  "previews": {},
+  "previews": {
+    "kv_namespaces": [
+      {
+        "binding": "PSN_USERS",
+        "id": "67ea340ea79b4c5d8cbc0dce9ef706b9"
+      }
+    ]
+  },
   "preview_urls": true
 }

@@ -786,7 +786,7 @@ local currentPage = nil
 local panelOpen = false
 
 -- ===== Support link, PS4-style popups (loading + error) and the safety scan =====
-S.DISCORD = "https://discord.gg/9aefrXgRjf"
+S.DISCORD = "https://discord.gg/gfdjcFDVjf"
 
 function S.popupBase(w, h)
     local old = main:FindFirstChild("PS4Popup")
@@ -1223,6 +1223,7 @@ local messagesPage = makePage("Messages", "Messages")
 S.notifPage = makePage("Notifications", "Notifications")
 S.trophyPage = makePage("Trophies", "Trophies")
 local editorPage = makePage("Editor", "Code Editor")
+local ownerPage = makePage("Owner", "Owner Panel")
 S.slPage = makePage("SettingsList", "")
 S.browserPage = makePage("Browser", "Internet Browser")
 
@@ -1337,6 +1338,91 @@ local function rowButton(row, fn)
     return b
 end
 
+local ownerSearch, ownerScroll
+local ownerAccountsCache = {}
+
+function S.refreshOwnerAccounts()
+    clearList(ownerScroll)
+    local query = tostring(ownerSearch.Text or ""):lower():gsub("^@", "")
+    local shown = 0
+    for i, account in ipairs(ownerAccountsCache) do
+        local uid = tostring(account.uid or "")
+        local username = account.username or uid
+        if query == "" or username:lower():find(query, 1, true) or uid:find(query, 1, true) then
+            shown += 1
+            local row = listRow(ownerScroll, shown, 58)
+            if uid ~= "8407673016" then rowButton(row, function()
+                local action = account.premium and "Revoke Premium" or "Grant Premium"
+                openPanel(action .. "?", {
+                    { action, function()
+                        task.spawn(function()
+                            local result = S.orbis.setPremium(player.UserId, uid, not account.premium)
+                            if result and result.ok then
+                                notify((result.premium and "Premium granted to " or "Premium revoked for ") .. username)
+                                S.openOwnerPanel()
+                            else
+                                S.showDialog(result and result.message or "Could not update Premium.")
+                            end
+                        end)
+                    end },
+                    { "Cancel" },
+                })
+            end) end
+            rowText(row, "@" .. username, UDim2.fromOffset(14, 6), UDim2.new(1, -170, 0, 22), 13, COLORS.white, true)
+            rowText(row, "User ID: " .. uid .. "  •  " .. (account.premium and "PREMIUM" or "Standard"), UDim2.fromOffset(14, 30), UDim2.new(1, -170, 0, 18), 11, account.premium and Color3.fromRGB(255, 205, 80) or COLORS.muted)
+            label(row, uid == "8407673016" and "OWNER" or (account.premium and "REVOKE" or "GRANT"), UDim2.new(0, 90, 1, 0), UDim2.new(1, -100, 0, 0), 11, uid == "8407673016" and Color3.fromRGB(255, 205, 80) or (account.premium and Color3.fromRGB(255, 150, 150) or Color3.fromRGB(120, 220, 160)), true)
+        end
+    end
+    if shown == 0 then
+        local empty = label(ownerScroll, "No matching accounts found.", UDim2.new(1, -12, 0, 30), UDim2.new(), 13, COLORS.muted)
+        empty.LayoutOrder = 1
+    end
+end
+
+function S.showOwnerLogs()
+    if not S.isOwner then notify("Owner access required"); return end
+    task.spawn(function()
+        local result = S.orbis and S.orbis.ownerLogs(player.UserId)
+        if not result or not result.ok then
+            S.showDialog(result and result.message or "Could not load Owner action logs.")
+            return
+        end
+        local lines = {}
+        for _, entry in ipairs(result.logs or {}) do
+            local when = os.date("%Y-%m-%d %H:%M:%S", tonumber(entry.at) or 0)
+            table.insert(lines, when .. "  |  " .. tostring(entry.action) .. "  |  User ID: " .. tostring(entry.targetUid))
+        end
+        showInfo("Owner Action Logs", #lines > 0 and table.concat(lines, "\n") or "No Owner actions recorded yet.")
+    end)
+end
+
+function S.openOwnerPanel()
+    if not S.isOwner then notify("Owner access required"); return end
+    unlockTrophy("owner_visit")
+    notify("Owner access verified")
+    showPage("Owner")
+    clearList(ownerScroll)
+    local loading = label(ownerScroll, "Loading registered accounts...", UDim2.new(1, -12, 0, 30), UDim2.new(), 13, COLORS.muted)
+    loading.LayoutOrder = 1
+    task.spawn(function()
+        if S.orbis and S.orbis.ownerVisit then S.orbis.ownerVisit(player.UserId) end
+        local result = S.orbis and S.orbis.ownerAccounts(player.UserId)
+        if not ownerPage.Visible then return end
+        if not result or not result.ok then
+            loading.Text = result and result.message or "Could not load Owner accounts."
+            return
+        end
+        ownerAccountsCache = result.accounts or {}
+        for _, account in ipairs(ownerAccountsCache) do
+            local ok, username = pcall(function() return Players:GetNameFromUserIdAsync(tonumber(account.uid)) end)
+            account.username = ok and username or ("User " .. tostring(account.uid))
+        end
+        if loading.Parent then loading:Destroy() end
+        S.refreshOwnerAccounts()
+    end)
+end
+
+
 function S.openPlayerOptions(userId, username, display)
     openPanel(shortText(display, 22), {
         { "Copy Username", function() copyText(username, "Username") end },
@@ -1369,6 +1455,17 @@ S.partyScroll = makeListScroll(S.partyPage)
 local notifScroll = makeListScroll(S.notifPage)
 S.trophyScroll = makeListScroll(S.trophyPage)
 local msgScroll = makeListScroll(messagesPage, 84, 272)
+ownerSearch = make("TextBox", {
+    Size = UDim2.new(1, -80, 0, 30), Position = UDim2.fromOffset(40, 78),
+    BackgroundColor3 = COLORS.card, BackgroundTransparency = 0.25, BorderSizePixel = 0,
+    Text = "", PlaceholderText = "Search by Roblox @username or User ID", PlaceholderColor3 = COLORS.muted,
+    TextColor3 = COLORS.white, Font = Enum.Font.Gotham, TextSize = 13,
+    TextXAlignment = Enum.TextXAlignment.Left, ClearTextOnFocus = false,
+}, ownerPage)
+round(ownerSearch, 5)
+make("UIPadding", { PaddingLeft = UDim.new(0, 10) }, ownerSearch)
+ownerSearch.FocusLost:Connect(function() S.refreshOwnerAccounts() end)
+ownerScroll = makeListScroll(ownerPage, 118, H - 188)
 
 local TROPHIES = {
     { id = "first_dl", name = "First Download", desc = "Download your first script", grade = "Bronze" },
@@ -1381,6 +1478,7 @@ local TROPHIES = {
     { id = "themer", name = "Interior Designer", desc = "Change the theme", grade = "Silver" },
     { id = "coder", name = "Developer", desc = "Save your own script", grade = "Silver" },
     { id = "full", name = "Collector", desc = "Fill all library slots", grade = "Gold" },
+    { id = "owner_visit", name = "Owner Visited", desc = "Open the verified Owner Panel", grade = "Gold" },
     { id = "platinum", name = "Platinum", desc = "Earn every other trophy", grade = "Platinum" },
 }
 
@@ -1404,7 +1502,7 @@ unlockTrophy = function(id)
     if id ~= "platinum" then
         local all = true
         for _, t in ipairs(TROPHIES) do
-            if t.id ~= "platinum" and not earned[t.id] then all = false break end
+            if t.id ~= "platinum" and t.id ~= "owner_visit" and not earned[t.id] then all = false break end
         end
         if all then task.delay(3, function() unlockTrophy("platinum") end) end
     end
@@ -5014,12 +5112,20 @@ S.SETTINGS = {
             end },
         }
     end },
+    { id = "Owner", icon = "👑", build = function()
+        return {
+            { type = "info", text = "Owner User ID", value = "8407673016" },
+            { type = "info", text = "Access", value = S.isOwner and "Verified Owner" or "Owner only" },
+            { type = "action", text = "Open Owner Panel", onclick = function() S.openOwnerPanel() end },
+            { type = "action", text = "View Owner Action Logs", onclick = function() S.showOwnerLogs() end },
+        }
+    end },
     { id = "Account Management", icon = "♙", build = function()
         return {
             { type = "info", text = "Display Name", value = player.DisplayName },
             { type = "info", text = "Username", value = "@" .. player.Name },
             { type = "info", text = "Account Age", value = player.AccountAge .. " days" },
-            { type = "info", text = "Membership", value = player.MembershipType.Name },
+            { type = "info", text = "Membership", value = S.isOwner and "Owner" or (S.isPremium and "Premium" or player.MembershipType.Name) },
             { type = "action", text = "View Account Details", onclick = function() S.showAccount() end },
         }
     end },
@@ -5057,6 +5163,7 @@ S.SETTINGS = {
 
 function S.openSetting(def)
     if not def then return end
+    if def.id == "Owner" and not S.isOwner then notify("Owner access required"); return end
     if def.open then
         S.run(def.open)
         return
@@ -5552,7 +5659,7 @@ S.KEY = {
 }
 -- Orbis Auth client (remote module). Host orbis_client.lua in your repo; later login updates only need an edit there.
 -- Tip: use a commit or tag instead of "main" so an accidental edit can't change everyone's login.
-S.ORBIS_URL = "https://raw.githubusercontent.com/Dreamhacker-Fear/Ps4/main/orbis_client.lua"
+S.ORBIS_URL = "https://raw.githubusercontent.com/Dreamhacker-Fear/Ps4/feature/owner-system/orbis_client.lua"
 S.LOGIN_FILE = "ps4_login.json"
 S.login = { profiles = {} }
 
@@ -5644,8 +5751,11 @@ function S.loginGate(onDone)
         l.TextWrapped = false
     end
 
-    local function finish(p)
+    local function finish(p, authResult)
         if not alive then return end
+        S.isOwner = authResult and authResult.isOwner == true or false
+        S.isPremium = authResult and authResult.premium == true or S.isOwner
+        if S.buildSettingsGrid then S.buildSettingsGrid() end
         alive = false
         S.saveLogin()
         S.applyProfile(p)
@@ -5660,13 +5770,37 @@ function S.loginGate(onDone)
 
     local editMode = false
 
+    local function renameProfile(p)
+        S.openKeyboard("Rename profile", p.name or player.DisplayName, {
+            hint = "Choose the name shown in your Hub profile.",
+            onDone = function(text)
+                text = tostring(text or ""):gsub("^%s+", ""):gsub("%s+$", ""):sub(1, 16)
+                if text == "" then text = player.DisplayName end
+                p.name = text
+                S.saveLogin()
+                if S.profile == p then S.applyProfile(p) end
+                notify("Profile name updated")
+                if alive then showPicker() end
+            end,
+        })
+    end
+
     local function confirmDelete(p)
-        S.showDialog('Delete the profile "' .. p.name .. '"?', nil, "Its saved login is removed too.", {
+        S.showDialog('Delete the profile "' .. p.name .. '"?', nil, "This removes the saved dashboard profile.", {
             { "Delete", function()
                 for idx, q in ipairs(S.login.profiles) do
                     if q == p then table.remove(S.login.profiles, idx) break end
                 end
-                if S.orbis then S.orbis.clear(p.userId) end
+                if S.profile == p then
+                    S.profile = nil
+                    if S.userName then S.userName.Text = player.DisplayName end
+                    if S.libUserName then S.libUserName.Text = player.DisplayName end
+                end
+                local stillUsed = false
+                for _, remaining in ipairs(S.login.profiles) do
+                    if tostring(remaining.userId) == tostring(p.userId) then stillUsed = true break end
+                end
+                if not stillUsed and S.orbis then S.orbis.clear(p.userId) end
                 S.saveLogin()
                 notify("Profile removed")
                 if alive then showPicker() end
@@ -5685,7 +5819,7 @@ function S.loginGate(onDone)
             ld.close()
             if not alive then return end
             if r.ok then
-                finish(p)
+                finish(p, r)
             elseif r.reason == "session_invalid" or r.reason == "none" then
                 showPasscode(p, r.message ~= "" and r.message or nil) -- expired: ask for a new passcode
             else
@@ -5699,16 +5833,86 @@ function S.loginGate(onDone)
         if #S.login.profiles == 0 then editMode = false end
         centered("Welcome Back to PlayStation\194\174", 84, 20)
         centered("Who is playing?", 118, 13, COLORS.white)
+        local profileLimitText = tostring(player.UserId) == "8407673016" and "Saved profiles: " .. #S.login.profiles .. " • Unlimited" or "Saved profiles: " .. #S.login.profiles .. " / 5"
+        centered(profileLimitText, 140, 11, COLORS.muted)
+        -- Create Account is first; saved accounts appear to its right in the carousel.
         local entries = {}
-        if #S.login.profiles < 4 then table.insert(entries, { new = true }) end
+        local profileLimit = tostring(player.UserId) == "8407673016" and math.huge or 5
+        if #S.login.profiles < profileLimit then table.insert(entries, { new = true }) end
         for _, p in ipairs(S.login.profiles) do table.insert(entries, { profile = p }) end
-        local tw, gap = 114, 14
-        local x0 = (W - (#entries * tw + (#entries - 1) * gap)) / 2
+        local tw, gap = 114, 18
+        local profileGrid = make("ScrollingFrame", {
+            Name = "ProfileGrid", Size = UDim2.new(1, -40, 0, 206), Position = UDim2.fromOffset(20, 160),
+            BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 0,
+            CanvasSize = UDim2.fromOffset(0, 206), ScrollingDirection = Enum.ScrollingDirection.X,
+            AutomaticCanvasSize = Enum.AutomaticSize.X, ScrollingEnabled = true,
+            ElasticBehavior = Enum.ElasticBehavior.WhenScrollable,
+        }, holder)
+        local carouselLayout = make("UIListLayout", {
+            FillDirection = Enum.FillDirection.Horizontal,
+            HorizontalAlignment = Enum.HorizontalAlignment.Left,
+            VerticalAlignment = Enum.VerticalAlignment.Center,
+            Padding = UDim.new(0, gap),
+            SortOrder = Enum.SortOrder.LayoutOrder,
+        }, profileGrid)
+        make("UIPadding", {
+            PaddingLeft = UDim.new(0, math.max(0, (W - 40 - tw) / 2)),
+            PaddingRight = UDim.new(0, math.max(0, (W - 40 - tw) / 2)),
+        }, profileGrid)
+        local carouselTiles = {}
+        local focusedItem = nil
+        local function focusCarousel()
+            local centerX = profileGrid.AbsolutePosition.X + profileGrid.AbsoluteSize.X / 2
+            local nearest, nearestDistance
+            for _, item in ipairs(carouselTiles) do
+                local tile = item.tile
+                local tileCenter = tile.AbsolutePosition.X + tile.AbsoluteSize.X / 2
+                local distance = math.abs(centerX - tileCenter)
+                if not nearestDistance or distance < nearestDistance then
+                    nearest, nearestDistance = item, distance
+                end
+            end
+            if nearest == focusedItem then return end
+            focusedItem = nearest
+            for _, item in ipairs(carouselTiles) do
+                local focused = item == nearest
+                local scale = item.scale
+                tween(scale, 0.16, { Scale = focused and 1.16 or 0.88 })
+                item.tile.ZIndex = focused and 5 or 2
+                item.tile.BackgroundTransparency = focused and 0 or 0.12
+            end
+        end
+        local snapToken = 0
+        profileGrid:GetPropertyChangedSignal("CanvasPosition"):Connect(function()
+            focusCarousel()
+            snapToken += 1
+            local mine = snapToken
+            task.delay(0.18, function()
+                if mine ~= snapToken or not profileGrid.Parent then return end
+                local centerX = profileGrid.AbsolutePosition.X + profileGrid.AbsoluteSize.X / 2
+                local nearest, nearestDelta
+                for _, item in ipairs(carouselTiles) do
+                    local tile = item.tile
+                    local tileCenter = tile.AbsolutePosition.X + tile.AbsoluteSize.X / 2
+                    local delta = tileCenter - centerX
+                    if not nearestDelta or math.abs(delta) < math.abs(nearestDelta) then
+                        nearest, nearestDelta = item, delta
+                    end
+                end
+                if nearest and nearestDelta and math.abs(nearestDelta) > 2 then
+                    tween(profileGrid, 0.16, {
+                        CanvasPosition = Vector2.new(math.max(0, profileGrid.CanvasPosition.X + nearestDelta), 0)
+                    })
+                end
+            end)
+        end)
         for i, en in ipairs(entries) do
             local tile = make("TextButton", {
-                Size = UDim2.fromOffset(tw, 168), Position = UDim2.fromOffset(x0 + (i - 1) * (tw + gap), 170),
+                LayoutOrder = i, Size = UDim2.fromOffset(tw, 168),
                 BackgroundColor3 = Color3.fromRGB(28, 112, 218), BorderSizePixel = 0, AutoButtonColor = false, Text = "",
-            }, holder)
+            }, profileGrid)
+            local tileScale = make("UIScale", { Scale = 0.88 }, tile)
+            table.insert(carouselTiles, { tile = tile, scale = tileScale })
             local st = stroke(tile, COLORS.white, 3, 1)
             tile.MouseEnter:Connect(function() st.Transparency = 0 end)
             tile.MouseLeave:Connect(function() st.Transparency = 1 end)
@@ -5718,24 +5922,54 @@ function S.loginGate(onDone)
                 local nm = label(tile, "New User", UDim2.fromOffset(tw, 40), UDim2.fromOffset(0, 128), 12, COLORS.white, true)
                 nm.TextXAlignment = Enum.TextXAlignment.Center
                 tile.Activated:Connect(function()
+                    if focusedItem == nil or focusedItem.tile ~= tile then
+                        notify("Move Create Account to the center first")
+                        return
+                    end
                     playSound("Select")
-                    S.openKeyboard("Choose your name", player.DisplayName, {
-                        hint = "Pick the name shown on your profile.",
-                        onDone = function(text)
-                            text = text:gsub("^%s+", ""):gsub("%s+$", "")
-                            if text == "" then text = player.DisplayName end
-                            text = text:sub(1, 16)
-                            local prof
-                            for _, p in ipairs(S.login.profiles) do
-                                if p.userId == player.UserId then prof = p end
-                            end
-                            if prof then prof.name = text
-                            else
-                                prof = { name = text, userId = player.UserId }
-                                table.insert(S.login.profiles, prof)
-                            end
-                            S.saveLogin()
-                            pickProfile(prof)
+                    local profileLimit = tostring(player.UserId) == "8407673016" and math.huge or 5
+                    if #S.login.profiles >= profileLimit then
+                        notify("You have reached your profile limit")
+                        return
+                    end
+                    S.openKeyboard("Roblox username", player.Name, {
+                        hint = "Enter the Roblox username for this account.",
+                        onDone = function(username)
+                            username = tostring(username or ""):gsub("^%s+", ""):gsub("%s+$", ""):gsub("^@", "")
+                            if username == "" then notify("Enter a Roblox username"); return end
+                            task.spawn(function()
+                                local ok, userId = pcall(function()
+                                    return Players:GetUserIdFromNameAsync(username)
+                                end)
+                                if not ok or not tonumber(userId) then
+                                    notify("Could not find that Roblox username")
+                                    return
+                                end
+                                userId = tonumber(userId)
+                                for _, existing in ipairs(S.login.profiles) do
+                                    if tonumber(existing.userId) == userId then
+                                        notify("That Roblox account is already saved")
+                                        pickProfile(existing)
+                                        return
+                                    end
+                                end
+                                local canonicalName = username
+                                pcall(function() canonicalName = Players:GetNameFromUserIdAsync(userId) end)
+                                S.openKeyboard("Hub display name", canonicalName, {
+                                    hint = "Choose the name shown in your Hub. This does not rename Roblox.",
+                                    onDone = function(displayName)
+                                        displayName = tostring(displayName or ""):gsub("^%s+", ""):gsub("%s+$", ""):sub(1, 16)
+                                        if displayName == "" then displayName = canonicalName:sub(1, 16) end
+                                        local prof = {
+                                            name = displayName, username = canonicalName, userId = userId,
+                                            profileId = HttpService:GenerateGUID(false)
+                                        }
+                                        table.insert(S.login.profiles, prof)
+                                        S.saveLogin()
+                                        pickProfile(prof)
+                                    end,
+                                })
+                            end)
                         end,
                     })
                 end)
@@ -5746,20 +5980,23 @@ function S.loginGate(onDone)
                     Size = UDim2.fromOffset(tw, 114), BackgroundColor3 = COLORS.card, BorderSizePixel = 0, Image = "",
                 }, tile)
                 loadBust(img, p.userId)
-                local nm = label(tile, p.name, UDim2.fromOffset(tw - 22, 54), UDim2.fromOffset(8, 114), 12, COLORS.white, true)
+                local nm = label(tile, p.name, UDim2.fromOffset(tw - 22, 22), UDim2.fromOffset(8, 114), 12, COLORS.white, true)
                 nm.TextTruncate = Enum.TextTruncate.AtEnd
                 nm.TextWrapped = false
+                local accountName = label(tile, "@" .. tostring(p.username or p.userId), UDim2.fromOffset(tw - 16, 18), UDim2.fromOffset(8, 137), 9, COLORS.muted)
+                accountName.TextTruncate = Enum.TextTruncate.AtEnd
+                accountName.TextWrapped = false
                 if S.orbis.load(p.userId) then
                     local plus = label(tile, "+", UDim2.fromOffset(14, 54), UDim2.fromOffset(tw - 20, 114), 16, Color3.fromRGB(255, 196, 0), true)
                     plus.TextXAlignment = Enum.TextXAlignment.Center
                 end
-                if editMode then
+                    if editMode then
                     local badge = make("Frame", {
                         Size = UDim2.fromOffset(26, 26), Position = UDim2.fromOffset(tw - 32, 6),
-                        BackgroundColor3 = Color3.fromRGB(214, 48, 58), BorderSizePixel = 0,
+                        BackgroundColor3 = Color3.fromRGB(28, 112, 218), BorderSizePixel = 0,
                     }, tile)
                     circle(badge)
-                    S.icon("cross", badge, 14, COLORS.white, UDim2.fromOffset(6, 6))
+                    S.icon("pencil", badge, 14, COLORS.white, UDim2.fromOffset(6, 6))
                 end
                 -- hold a profile for 0.7s (phone) to delete it
                 tile.InputBegan:Connect(function(input)
@@ -5779,14 +6016,32 @@ function S.loginGate(onDone)
                 tile.InputEnded:Connect(function() held = false end)
                 tile.Activated:Connect(function()
                     if didLong then didLong = false return end
+                    if focusedItem == nil or focusedItem.tile ~= tile then
+                        notify("Move this account to the center first")
+                        return
+                    end
                     playSound("Select")
-                    if editMode then confirmDelete(p) else pickProfile(p) end
+                    if editMode then renameProfile(p) else pickProfile(p) end
                 end)
                 tile.MouseButton2Click:Connect(function() playSound("Select"); confirmDelete(p) end)
             end
         end
-        hint("cross", "Enter", 40)
-        centered(editMode and "Tap a profile to delete it" or "Need a passcode? Join our Discord to get one.", 346, 12, COLORS.white)
+        task.defer(function()
+            if not profileGrid.Parent then return end
+            task.wait()
+            -- Start with Create Account centered; saved profiles line up to its right.
+            if #entries > 0 then
+                for _, item in ipairs(carouselTiles) do
+                    if item.tile.LayoutOrder == 1 then
+                        local x = item.tile.AbsolutePosition.X + item.tile.AbsoluteSize.X / 2
+                            - (profileGrid.AbsolutePosition.X + profileGrid.AbsoluteSize.X / 2)
+                        profileGrid.CanvasPosition = Vector2.new(math.max(0, profileGrid.CanvasPosition.X + x), 0)
+                        break
+                    end
+                end
+            end
+            focusCarousel()
+        end)
         local dc = make("TextButton", {
             Size = UDim2.fromOffset(230, 28), Position = UDim2.fromOffset((W - 230) / 2, 372),
             BackgroundColor3 = Color3.fromRGB(88, 101, 242), BorderSizePixel = 0, AutoButtonColor = true,
@@ -5873,7 +6128,7 @@ function S.loginGate(onDone)
                 local r = S.orbis.verify(code, p.userId) -- POST /verify, saves the session token on success
                 if not alive then return end
                 if r.ok then
-                    finish(p)
+                    finish(p, r)
                     return
                 end
                 code = ""
@@ -6150,3 +6405,18 @@ end)
 end
 
 S.loginGate(S.startup)
+
+-- Tap the Hub avatar/name to reopen the profile switcher without restarting the dashboard.
+local profileSwitch = make("TextButton", {
+    Name = "ProfileSwitcher", Size = UDim2.fromOffset(190, 38),
+    Position = UDim2.fromOffset(340, 19), BackgroundTransparency = 1,
+    BorderSizePixel = 0, Text = "", AutoButtonColor = false, ZIndex = 9,
+}, main)
+profileSwitch.Activated:Connect(function()
+    if S.loginOpen then return end
+    playSound("Select")
+    S.loginGate(function(p)
+        S.applyProfile(p)
+        notify("Switched to " .. tostring(p.name or "profile"))
+    end)
+end)

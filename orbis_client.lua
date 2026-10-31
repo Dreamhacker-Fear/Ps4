@@ -224,6 +224,37 @@ function Client.resume(uid)
     return result
 end
 
+-- Owner-only requests. The Worker checks the stored session and Owner ID on every call.
+local function ownerRequest(path, uid, extra)
+    uid = tostring(uid or "")
+    local token = readToken(uid)
+    if not token then
+        return { ok = false, reason = "session_invalid", message = "Sign in again to use Owner features." }
+    end
+    local payload = { uid = uid, token = token }
+    for k, v in pairs(extra or {}) do payload[k] = v end
+    return post(path, payload)
+end
+
+function Client.ownerAccounts(uid)
+    return ownerRequest("/owner/accounts", uid)
+end
+
+function Client.setPremium(uid, targetUid, enabled)
+    return ownerRequest("/owner/premium", uid, {
+        targetUid = tostring(targetUid or ""),
+        enabled = enabled == true
+    })
+end
+
+function Client.ownerVisit(uid)
+    return ownerRequest("/owner/visit", uid)
+end
+
+function Client.ownerLogs(uid)
+    return ownerRequest("/owner/logs", uid)
+end
+
 -- Delete saved session
 function Client.clear(uid)
     clearToken(uid)

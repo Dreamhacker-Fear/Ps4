@@ -13,6 +13,7 @@
 
 const APP_ID = "1565803212982845521";
 const GUILD_ID = "1565451165213401149";
+const OWNER_UID = "8407673016";
 
 const CODE_LEN = 4;                 // fixed at 4 digits (PSN login design)
 const CODE_TTL = 86400;             // an unused passcode lives 24 hours
@@ -58,11 +59,13 @@ const MSG = {
   proof_missing: "Add the phrase from your /psn message to the About section of your Roblox profile, then try again.",
   ownership_unavailable: "Could not check your Roblox profile right now. Try again in a moment.",
   session_invalid: "Your session expired. Run /psn in Discord for a new passcode.",
+  owner_required: "Owner access is required.",
+  account_not_found: "That account has not signed in yet.",
   bad_request: "That request was not valid.",
   server_error: "The login server had a problem. Try again in a moment.",
 };
 const STATUS = { invalid: 401, proof_missing: 403, ownership_unavailable: 503, session_invalid: 401,
-  rate_limited: 429, bad_request: 400, server_error: 503 };
+  owner_required: 403, account_not_found: 404, rate_limited: 429, bad_request: 400, server_error: 503 };
 
 // ---------------------------------------------------------------------------
 // Roblox account ownership.
@@ -114,6 +117,10 @@ export class AuthState {
       else if (path === "/issue") out = await this.issue(body);
       else if (path === "/claim") out = await this.claim(body);
       else if (path === "/session") out = await this.session(body);
+      else if (path === "/owner/accounts") out = await this.ownerAccounts(body);
+      else if (path === "/owner/premium") out = await this.ownerPremium(body);
+      else if (path === "/owner/visit") out = await this.ownerVisit(body);
+      else if (path === "/owner/logs") out = await this.ownerLogs(body);
       else out = { ok: false, reason: "bad_request" };
     } catch (e) {
       out = { ok: false, reason: e instanceof SyntaxError ? "bad_request" : "server_error" };
@@ -250,7 +257,10 @@ export class AuthState {
       const u = await txn.get(`user:${rec2.did}`);
       if (u && u.code === code) await txn.delete(`user:${rec2.did}`);
       await txn.put(`sess:${tokenHash}`, { uid, did: rec2.did, exp: t + SESSION_TTL });
-      return { ok: true, token, exp: t + SESSION_TTL };
+      const account = await txn.get(`acct:${uid}`) || { uid, firstSeen: t, premium: false };
+      account.lastSeen = t;
+      await txn.put(`acct:${uid}`, account);
+      return { ok: true, token, exp: t + SESSION_TTL, isOwner: uid === OWNER_UID, premium: uid === OWNER_UID || account.premium === true };
     });
     if (out.ok) await this.ensureAlarm();
     return out;
@@ -272,7 +282,71 @@ export class AuthState {
         await this.txBump(txn, `sfail:${ip}`, 600);
         return { ok: false, reason: "session_invalid" };
       }
-      return { ok: true, exp: s.exp };
+      const account = (await txn.get(`acct:${uid}`)) || { uid, firstSeen: nowSec(), premium: false };
+      account.lastSeen = nowSec();
+      await txn.put(`acct:${uid}`, account);
+      return { ok: true, exp: s.exp, isOwner: uid === OWNER_UID, premium: uid === OWNER_UID || account.premium === true };
+    });
+  }
+
+  // ----- Owner-only API. Every operation validates the stored session, not a client-side role flag. -----
+  async ownerSession(txn, body, hash) {
+    const uid = String(body.uid == null ? "" : body.uid);
+    if (uid !== OWNER_UID || !hash) return null;
+    const session = await txn.get(`sess:${hash}`);
+    return session && session.uid === OWNER_UID && session.exp > nowSec() ? session : null;
+  }
+
+  async ownerAccounts(body) {
+    const token = String(body.token == null ? "" : body.token);
+    const hash = isToken(token) ? await sha256Hex(token) : null;
+    return this.tx(async (txn) => {
+      if (!(await this.ownerSession(txn, body, hash))) return { ok: false, reason: "owner_required" };
+      const all = await txn.list({ prefix: "acct:" });
+      const accounts = [...all.values()].map((a) => ({
+        uid: a.uid, firstSeen: a.firstSeen, lastSeen: a.lastSeen, premium: a.premium === true || a.uid === OWNER_UID,
+      })).sort((a, b) => (b.lastSeen || 0) - (a.lastSeen || 0)).slice(0, 200);
+      return { ok: true, accounts };
+    });
+  }
+
+  async ownerPremium(body) {
+    const target = String(body.targetUid == null ? "" : body.targetUid);
+    const enabled = body.enabled === true;
+    if (!isUid(target) || target === OWNER_UID) return { ok: false, reason: "bad_request" };
+    const token = String(body.token == null ? "" : body.token);
+    const hash = isToken(token) ? await sha256Hex(token) : null;
+    return this.tx(async (txn) => {
+      if (!(await this.ownerSession(txn, body, hash))) return { ok: false, reason: "owner_required" };
+      const account = await txn.get(`acct:${target}`);
+      if (!account) return { ok: false, reason: "account_not_found" };
+      account.premium = enabled;
+      account.premiumChangedAt = nowSec();
+      await txn.put(`acct:${target}`, account);
+      await txn.put(`ownerlog:${nowSec()}:${target}`, { action: enabled ? "premium_granted" : "premium_revoked", targetUid: target, at: nowSec() });
+      return { ok: true, targetUid: target, premium: enabled };
+    });
+  }
+
+  async ownerVisit(body) {
+    const token = String(body.token == null ? "" : body.token);
+    const hash = isToken(token) ? await sha256Hex(token) : null;
+    return this.tx(async (txn) => {
+      if (!(await this.ownerSession(txn, body, hash))) return { ok: false, reason: "owner_required" };
+      const at = nowSec();
+      await txn.put(`ownerlog:${at}:visit`, { action: "owner_visit", targetUid: OWNER_UID, at });
+      return { ok: true, at };
+    });
+  }
+
+  async ownerLogs(body) {
+    const token = String(body.token == null ? "" : body.token);
+    const hash = isToken(token) ? await sha256Hex(token) : null;
+    return this.tx(async (txn) => {
+      if (!(await this.ownerSession(txn, body, hash))) return { ok: false, reason: "owner_required" };
+      const all = await txn.list({ prefix: "ownerlog:" });
+      const logs = [...all.values()].sort((a, b) => (b.at || 0) - (a.at || 0)).slice(0, 50);
+      return { ok: true, logs };
     });
   }
 
@@ -290,6 +364,8 @@ export class AuthState {
         } else if (k.startsWith("rl:")) {
           const [, win, w] = k.split(":");
           if ((Number(w) + 2) * Number(win) <= t) del.push(k);
+        } else if (k.startsWith("ownerlog:")) {
+          if (v && v.at < t - 30 * 86400) del.push(k);
         }
       }
       for (let i = 0; i < del.length; i += 100) await txn.delete(del.slice(i, i + 100));
@@ -378,9 +454,10 @@ async function handleAuthPost(request, env, path) {
   }
   const payload = path === "/verify"
     ? { ip, uid: String(b.uid == null ? "" : b.uid), code: String(b.code == null ? "" : b.code) }
-    : { ip, uid: String(b.uid == null ? "" : b.uid), token: String(b.token == null ? "" : b.token) };
+    : { ip, uid: String(b.uid == null ? "" : b.uid), token: String(b.token == null ? "" : b.token), targetUid: String(b.targetUid == null ? "" : b.targetUid), enabled: b.enabled === true };
   try {
-    const out = await callAuth(env, path === "/verify" ? "/claim" : "/session", payload);
+    const authPath = path === "/verify" ? "/claim" : path;
+    const out = await callAuth(env, authPath, payload);
     const status = out.ok ? 200 : (out.status || 400);
     delete out.status;
     return json(out, status);
@@ -418,7 +495,7 @@ export default {
     const { pathname } = new URL(request.url);
     if (request.method === "GET" && pathname === "/") return new Response("Orbis Auth is online.");
     if (pathname === "/setup") return handleSetup(request, env);
-    if (pathname === "/verify" || pathname === "/session") return handleAuthPost(request, env, pathname);
+    if (pathname === "/verify" || pathname === "/session" || pathname === "/owner/accounts" || pathname === "/owner/premium" || pathname === "/owner/visit" || pathname === "/owner/logs") return handleAuthPost(request, env, pathname);
     if (request.method === "POST" && (pathname === "/" || pathname === "/interactions")) return handleDiscord(request, env);
     return new Response("Not found", { status: 404 });
   },

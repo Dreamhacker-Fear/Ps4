@@ -91,6 +91,23 @@ async function fetchProfileDescription(uid) {
   }
 }
 
+async function fetchRobloxUsername(uid) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 4000);
+  try {
+    const r = await fetch("https://users.roblox.com/v1/users/" + uid, {
+      signal: ctrl.signal, headers: { Accept: "application/json" },
+    });
+    if (!r.ok) return null;
+    const j = await r.json();
+    return typeof j.name === "string" ? j.name : null;
+  } catch (_) {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Durable Object: one global instance. Storage reads/writes with no network await in between
 // are atomic here, which removes the KV race conditions (claiming, counters, uniqueness).
@@ -308,6 +325,8 @@ export class AuthState {
       return { ok: false, reason: "bad_request", message: "Orbis usernames must be 3-20 letters, numbers or underscores." };
     }
     const usernameKey = username.toLowerCase();
+    const robloxName = await fetchRobloxUsername(session.uid);
+    if (!robloxName) return { ok: false, reason: "ownership_unavailable", message: "Could not verify your Roblox username right now. Try again." };
     const id = randomHex(12);
     const t = nowSec();
     return this.tx(async (txn) => {
@@ -320,7 +339,7 @@ export class AuthState {
         return { ok: false, reason: "account_limit", message: "Free accounts are limited to 3. Orbis Premium unlocks more accounts." };
       }
       const account = {
-        id, username, usernameKey, uid: session.uid, did: session.did || null,
+        id, username, usernameKey, robloxName, uid: session.uid, did: session.did || null,
         createdAt: t, premiumUntil: premiumUntil > t ? premiumUntil : 0,
         notifications: [], trophies: [],
       };
@@ -359,9 +378,9 @@ export class AuthState {
     const query = String(body.query || "").trim().toLowerCase().replace(/^@/, "").slice(0, 32);
     const all = await this.state.storage.list({ prefix: "acct:" });
     const accounts = [...all.values()]
-      .filter((a) => a && (!query || a.usernameKey.includes(query) || a.uid.includes(query)))
+      .filter((a) => a && (!query || a.usernameKey.includes(query) || String(a.robloxName || "").toLowerCase().includes(query) || a.uid.includes(query)))
       .slice(0, 100)
-      .map((a) => ({ id: a.id, username: a.username, uid: a.uid, createdAt: a.createdAt,
+      .map((a) => ({ id: a.id, username: a.username, robloxName: a.robloxName || "", uid: a.uid, createdAt: a.createdAt,
         premiumUntil: a.premiumUntil || 0 }));
     return { ok: true, accounts };
   }

@@ -4,6 +4,10 @@ A Roblox/Luau dashboard styled after the PlayStation 4 interface, with an Orbis 
 
 > **Important:** This is a dashboard running in Roblox. It does not sign in to PlayStation Network, change the real PS4 system user, or switch console accounts. The saved profiles in this project are Roblox account identities used by the dashboard's own authentication flow.
 
+## Community
+
+Join the project's Discord server: [https://discord.gg/gfdjcFDVjf](https://discord.gg/gfdjcFDVjf)
+
 ## Project files
 
 - `ps4.lua` — dashboard interface, profile picker, account switching within the dashboard, and Owner panel UI.

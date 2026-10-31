@@ -456,7 +456,8 @@ async function handleAuthPost(request, env, path) {
     ? { ip, uid: String(b.uid == null ? "" : b.uid), code: String(b.code == null ? "" : b.code) }
     : { ip, uid: String(b.uid == null ? "" : b.uid), token: String(b.token == null ? "" : b.token), targetUid: String(b.targetUid == null ? "" : b.targetUid), enabled: b.enabled === true };
   try {
-    const out = await callAuth(env, path === "/verify" ? "/claim" : "/session", payload);
+    const authPath = path === "/verify" ? "/claim" : path;
+    const out = await callAuth(env, authPath, payload);
     const status = out.ok ? 200 : (out.status || 400);
     delete out.status;
     return json(out, status);

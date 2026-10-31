@@ -16,5 +16,13 @@
       "tag": "v1",
       "new_sqlite_classes": ["AuthState"]
     }
-  ]
+  ],
+  "previews": {
+    "kv_namespaces": [
+      {
+        "binding": "PSN_USERS",
+        "id": "67ea340ea79b4c5d8cbc0dce9ef706b9"
+      }
+    ]
+  }
 }

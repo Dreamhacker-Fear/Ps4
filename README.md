@@ -8,6 +8,12 @@ A Roblox/Luau dashboard styled after the PlayStation 4 interface, with an Orbis 
 
 Join the project's Discord server: [https://discord.gg/gfdjcFDVjf](https://discord.gg/gfdjcFDVjf)
 
+## Release and readable source
+
+- `ps4.lua` is the obfuscated release entry point. The existing loadstring URL remains unchanged.
+- The readable dashboard source is preserved at `source/ps4.lua`.
+- Obfuscation only makes casual reading harder; it is not encryption and cannot prevent reverse engineering. Review the readable source before running updates.
+
 ## Project files
 
 - `ps4.lua` — dashboard interface, profile picker, account switching within the dashboard, and Owner panel UI.

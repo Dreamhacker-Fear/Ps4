@@ -16,10 +16,7 @@ const GUILD_ID = "1565451165213401149";
 
 const CODE_LEN = 4;                 // fixed at 4 digits (PSN login design)
 const CODE_TTL = 86400;             // an unused passcode lives 24 hours
-const SESSION_TTL = 86400;          // free session token lives 24 hours
-const PREMIUM_SESSION_TTL = 30 * 86400; // Premium trusted-device session: 30 days
-const OWNER_UID = "8407673016";
-const FREE_ACCOUNT_LIMIT = 3;
+const SESSION_TTL = 86400;          // a session token lives 24 hours
 const REQUIRE_PROFILE_PROOF = true; // prove the Roblox account is yours (see isOwner below)
 const SIG_MAX_AGE = 300;            // Discord requests older/newer than 5 min are rejected
 const SETUP_ENABLED = false;        // /setup is disabled (404). Set true only while re-registering /psn.
@@ -91,23 +88,6 @@ async function fetchProfileDescription(uid) {
   }
 }
 
-async function fetchRobloxUsername(uid) {
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 4000);
-  try {
-    const r = await fetch("https://users.roblox.com/v1/users/" + uid, {
-      signal: ctrl.signal, headers: { Accept: "application/json" },
-    });
-    if (!r.ok) return null;
-    const j = await r.json();
-    return typeof j.name === "string" ? j.name : null;
-  } catch (_) {
-    return null;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Durable Object: one global instance. Storage reads/writes with no network await in between
 // are atomic here, which removes the KV race conditions (claiming, counters, uniqueness).
@@ -134,12 +114,6 @@ export class AuthState {
       else if (path === "/issue") out = await this.issue(body);
       else if (path === "/claim") out = await this.claim(body);
       else if (path === "/session") out = await this.session(body);
-      else if (path === "/register") out = await this.registerAccount(body);
-      else if (path === "/accounts") out = await this.getAccounts(body);
-      else if (path === "/inbox") out = await this.getInbox(body);
-      else if (path === "/owner/accounts") out = await this.ownerAccounts(body);
-      else if (path === "/owner/visit") out = await this.ownerVisit(body);
-      else if (path === "/owner/premium") out = await this.ownerPremium(body);
       else out = { ok: false, reason: "bad_request" };
     } catch (e) {
       out = { ok: false, reason: e instanceof SyntaxError ? "bad_request" : "server_error" };
@@ -275,11 +249,8 @@ export class AuthState {
       await txn.delete(`code:${code}`); // single use
       const u = await txn.get(`user:${rec2.did}`);
       if (u && u.code === code) await txn.delete(`user:${rec2.did}`);
-      const premiumUntil = Number(await txn.get("premium:" + uid)) || 0;
-      const premium = premiumUntil > t;
-      const exp = t + (premium ? PREMIUM_SESSION_TTL : SESSION_TTL);
-      await txn.put("sess:" + tokenHash, { uid, did: rec2.did, exp });
-      return { ok: true, token, exp, premium };
+      await txn.put(`sess:${tokenHash}`, { uid, did: rec2.did, exp: t + SESSION_TTL });
+      return { ok: true, token, exp: t + SESSION_TTL };
     });
     if (out.ok) await this.ensureAlarm();
     return out;
@@ -301,138 +272,8 @@ export class AuthState {
         await this.txBump(txn, `sfail:${ip}`, 600);
         return { ok: false, reason: "session_invalid" };
       }
-      const premiumUntil = Number(await txn.get("premium:" + uid)) || 0;
-      return { ok: true, exp: s.exp, premium: premiumUntil > nowSec(), premiumUntil: premiumUntil || null };
+      return { ok: true, exp: s.exp };
     });
-  }
-
-
-  // ----- Authenticated Orbis account APIs -----
-  async authenticatedSession(body) {
-    const uid = String(body.uid == null ? "" : body.uid);
-    const token = String(body.token == null ? "" : body.token);
-    if (!isUid(uid) || !isToken(token)) return null;
-    const hash = await sha256Hex(token);
-    const s = await this.state.storage.get("sess:" + hash);
-    return s && s.uid === uid && s.exp > nowSec() ? s : null;
-  }
-
-  async registerAccount(body) {
-    const session = await this.authenticatedSession(body);
-    if (!session) return { ok: false, reason: "session_invalid" };
-    const username = String(body.username || "").trim();
-    if (!/^[A-Za-z0-9_]{3,20}$/.test(username)) {
-      return { ok: false, reason: "bad_request", message: "Orbis usernames must be 3-20 letters, numbers or underscores." };
-    }
-    const usernameKey = username.toLowerCase();
-    const robloxName = await fetchRobloxUsername(session.uid);
-    if (!robloxName) return { ok: false, reason: "ownership_unavailable", message: "Could not verify your Roblox username right now. Try again." };
-    const id = randomHex(12);
-    const t = nowSec();
-    return this.tx(async (txn) => {
-      const taken = await txn.get("name:" + usernameKey);
-      if (taken) return { ok: false, reason: "bad_request", message: "That Orbis username is already taken." };
-      const existing = await txn.list({ prefix: "acct:" });
-      const owned = [...existing.values()].filter((a) => a && a.uid === session.uid);
-      const premiumUntil = Number(await txn.get("premium:" + session.uid)) || 0;
-      if (premiumUntil <= t && owned.length >= FREE_ACCOUNT_LIMIT) {
-        return { ok: false, reason: "account_limit", message: "Free accounts are limited to 3. Orbis Premium unlocks more accounts." };
-      }
-      const account = {
-        id, username, usernameKey, robloxName, uid: session.uid, did: session.did || null,
-        createdAt: t, premiumUntil: premiumUntil > t ? premiumUntil : 0,
-        notifications: [], trophies: [],
-      };
-      await txn.put("acct:" + id, account);
-      await txn.put("name:" + usernameKey, id);
-      return { ok: true, account: { id, username, createdAt: t }, premium: premiumUntil > t };
-    });
-  }
-
-  async getAccounts(body) {
-    const session = await this.authenticatedSession(body);
-    if (!session) return { ok: false, reason: "session_invalid" };
-    const all = await this.state.storage.list({ prefix: "acct:" });
-    const accounts = [...all.values()]
-      .filter((a) => a && a.uid === session.uid)
-      .map((a) => ({ id: a.id, username: a.username, createdAt: a.createdAt }));
-    const premiumUntil = Number(await this.state.storage.get("premium:" + session.uid)) || 0;
-    return { ok: true, accounts, premium: premiumUntil > nowSec(), premiumUntil: premiumUntil || null,
-      accountLimit: premiumUntil > nowSec() ? null : FREE_ACCOUNT_LIMIT };
-  }
-
-  async getInbox(body) {
-    const session = await this.authenticatedSession(body);
-    if (!session) return { ok: false, reason: "session_invalid" };
-    const id = String(body.accountId || "");
-    if (!/^[0-9a-f]{24}$/.test(id)) return { ok: false, reason: "bad_request" };
-    const account = await this.state.storage.get("acct:" + id);
-    if (!account || account.uid !== session.uid) return { ok: false, reason: "bad_request", message: "Orbis account not found." };
-    return { ok: true, notifications: Array.isArray(account.notifications) ? account.notifications : [],
-      trophies: Array.isArray(account.trophies) ? account.trophies : [] };
-  }
-
-  async ownerAccounts(body) {
-    const session = await this.authenticatedSession(body);
-    if (!session || session.uid !== OWNER_UID) return { ok: false, reason: "forbidden", status: 403, message: "Owner access required." };
-    const query = String(body.query || "").trim().toLowerCase().replace(/^@/, "").slice(0, 32);
-    const all = await this.state.storage.list({ prefix: "acct:" });
-    const accounts = [...all.values()]
-      .filter((a) => a && (!query || a.usernameKey.includes(query) || String(a.robloxName || "").toLowerCase().includes(query) || a.uid.includes(query)))
-      .slice(0, 100)
-      .map((a) => ({ id: a.id, username: a.username, robloxName: a.robloxName || "", uid: a.uid, createdAt: a.createdAt,
-        premiumUntil: a.premiumUntil || 0 }));
-    return { ok: true, accounts };
-  }
-
-  async ownerVisit(body) {
-    const session = await this.authenticatedSession(body);
-    if (!session || session.uid !== OWNER_UID) return { ok: false, reason: "forbidden", status: 403, message: "Owner access required." };
-    const id = String(body.accountId || "");
-    if (!/^[0-9a-f]{24}$/.test(id)) return { ok: false, reason: "bad_request" };
-    const t = nowSec();
-    return this.tx(async (txn) => {
-      const account = await txn.get("acct:" + id);
-      if (!account) return { ok: false, reason: "bad_request", message: "Orbis account not found." };
-      account.notifications = Array.isArray(account.notifications) ? account.notifications : [];
-      account.trophies = Array.isArray(account.trophies) ? account.trophies : [];
-      account.notifications.unshift({ type: "owner_visit", text: "The Orbis owner visited your profile.", at: t });
-      account.notifications = account.notifications.slice(0, 50);
-      if (!account.trophies.includes("owner_visited")) account.trophies.push("owner_visited");
-      account.lastOwnerVisit = t;
-      await txn.put("acct:" + id, account);
-      await txn.put("audit:owner_visit:" + t + ":" + id, { accountId: id, uid: account.uid, at: t, actor: OWNER_UID });
-      return { ok: true, notified: true, trophyAwarded: true };
-    });
-  }
-
-  async ownerPremium(body) {
-    const session = await this.authenticatedSession(body);
-    if (!session || session.uid !== OWNER_UID) return { ok: false, reason: "forbidden", status: 403, message: "Owner access required." };
-    const uid = String(body.targetUid || "");
-    if (!isUid(uid)) return { ok: false, reason: "bad_request" };
-    const days = Math.max(0, Math.min(3650, Number(body.days == null ? 30 : body.days) || 0));
-    const until = days === 0 ? 0 : nowSec() + Math.floor(days * 86400);
-    await this.tx(async (txn) => {
-      if (until) await txn.put("premium:" + uid, until);
-      else await txn.delete("premium:" + uid);
-      const all = await txn.list({ prefix: "acct:" });
-      for (const [key, account] of all) {
-        if (account && account.uid === uid) {
-          account.premiumUntil = until;
-          await txn.put(key, account);
-        }
-      }
-      const sessions = await txn.list({ prefix: "sess:" });
-      for (const [key, session] of sessions) {
-        if (session && session.uid === uid && session.exp > nowSec()) {
-          session.exp = until ? Math.max(session.exp, nowSec() + PREMIUM_SESSION_TTL) : Math.min(session.exp, nowSec() + SESSION_TTL);
-          await txn.put(key, session);
-        }
-      }
-      await txn.put("audit:premium:" + nowSec() + ":" + uid, { uid, until, actor: OWNER_UID });
-    });
-    return { ok: true, premium: until > nowSec(), premiumUntil: until || null };
   }
 
   // ----- hourly cleanup of expired data -----
@@ -548,28 +389,6 @@ async function handleAuthPost(request, env, path) {
   }
 }
 
-
-async function handleOrbisPost(request, env, path) {
-  if (request.method !== "POST") return json({ ok: false, reason: "bad_request", message: MSG.bad_request }, 405);
-  let body;
-  try {
-    const raw = await request.text();
-    if (raw.length > 8192) return json({ ok: false, reason: "bad_request", message: MSG.bad_request }, 413);
-    body = JSON.parse(raw);
-    if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("bad body");
-  } catch (_) {
-    return json({ ok: false, reason: "bad_request", message: MSG.bad_request }, 400);
-  }
-  try {
-    const out = await callAuth(env, path, body);
-    const status = out.ok ? 200 : (out.status || (out.reason === "forbidden" ? 403 : 400));
-    delete out.status;
-    return json(out, status);
-  } catch (_) {
-    return json({ ok: false, reason: "server_error", message: MSG.server_error }, 503);
-  }
-}
-
 async function safeEqual(a, b) { // constant-time: compare SHA-256 digests byte by byte
   const enc = new TextEncoder();
   const ha = new Uint8Array(await crypto.subtle.digest("SHA-256", enc.encode(a)));
@@ -600,12 +419,6 @@ export default {
     if (request.method === "GET" && pathname === "/") return new Response("Orbis Auth is online.");
     if (pathname === "/setup") return handleSetup(request, env);
     if (pathname === "/verify" || pathname === "/session") return handleAuthPost(request, env, pathname);
-    if (pathname === "/orbis/register") return handleOrbisPost(request, env, "/register");
-    if (pathname === "/orbis/accounts") return handleOrbisPost(request, env, "/accounts");
-    if (pathname === "/orbis/inbox") return handleOrbisPost(request, env, "/inbox");
-    if (pathname === "/orbis/owner/accounts") return handleOrbisPost(request, env, "/owner/accounts");
-    if (pathname === "/orbis/owner/visit") return handleOrbisPost(request, env, "/owner/visit");
-    if (pathname === "/orbis/owner/premium") return handleOrbisPost(request, env, "/owner/premium");
     if (request.method === "POST" && (pathname === "/" || pathname === "/interactions")) return handleDiscord(request, env);
     return new Response("Not found", { status: 404 });
   },

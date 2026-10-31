@@ -148,7 +148,7 @@ end
 -- ===== PlayStation-style icons, drawn from simple shapes (no image files needed) =====
 S.iconDraw = {}
 local D = S.iconDraw
-D.cross = function(px, bar) bar(0.5, 0.5, 0.8, 45); bar(0.5, 0.5, 0.8, -45) end
+D.cross = function(px, bar) bar(0.5, 0.5, 1.1, 45); bar(0.5, 0.5, 1.1, -45) end -- 1.1 = same width as the circle
 D.circle = function(px) px(0.5, 0.5, 0.8, 0.8, { r = 0.5 }) end
 D.square = function(px) px(0.5, 0.5, 0.7, 0.7, { r = 0.08 }) end
 D.triangle = function(px, bar) bar(0.3, 0.5, 0.8, -60); bar(0.7, 0.5, 0.8, 60); bar(0.5, 0.84, 0.8, 0) end
@@ -212,6 +212,11 @@ D.info = function(px, bar, dot)
     px(0.5, 0.5, 0.82, 0.82, { r = 0.5 }); dot(0.5, 0.3, 0.1); bar(0.5, 0.6, 0.3, 90)
 end
 D.copy = function(px) px(0.38, 0.38, 0.46, 0.46, { r = 0.1 }); px(0.6, 0.6, 0.46, 0.46, { r = 0.1 }) end
+D.crown = function(px, bar, dot)
+    px(0.5, 0.78, 0.74, 0.14, { fill = true, r = 0.2 })
+    px(0.24, 0.5, 0.14, 0.34, { fill = true }); px(0.5, 0.4, 0.14, 0.5, { fill = true }); px(0.76, 0.5, 0.14, 0.34, { fill = true })
+    dot(0.24, 0.3, 0.14); dot(0.5, 0.18, 0.14); dot(0.76, 0.3, 0.14)
+end
 D.check = function(px, bar) bar(0.36, 0.62, 0.32, 45); bar(0.6, 0.5, 0.62, -50) end
 D.store = function(px) px(0.5, 0.62, 0.66, 0.5, { r = 0.1 }); px(0.5, 0.3, 0.28, 0.28, { r = 0.5 }) end
 D.library = function(px)
@@ -1441,6 +1446,8 @@ end
 
 function S.refreshFriends()
     unlockTrophy("social")
+    S.paintFriendTabs()
+    if S.friendsTab == "script" then S.refreshScriptFriends() return end
     clearList(friendsScroll)
     local status = label(friendsScroll, "Loading friends...", UDim2.new(1, -12, 0, 30), UDim2.new(), 14, COLORS.muted)
     status.LayoutOrder = 0
@@ -1485,6 +1492,147 @@ function S.refreshFriends()
         end
     end)
 end
+
+
+-- ===== Script friends: people who use this dashboard (needs the Orbis login) =====
+S.friendsTab = "roblox"
+S.fTabBtns = {}
+
+function S.fTab(text, x, w, id, fn)
+    local b = button(S.friendsPage, text, UDim2.fromOffset(w, 28), UDim2.fromOffset(x, 26), COLORS.card, 12)
+    S.fTabBtns[id] = b
+    b.Activated:Connect(function() playSound("Select"); fn() end)
+    return b
+end
+function S.paintFriendTabs()
+    for id, b in pairs(S.fTabBtns) do
+        if id == "add" then b.Visible = S.friendsTab == "script"
+        else b.BackgroundColor3 = (S.friendsTab == id) and COLORS.blue or COLORS.card end
+    end
+end
+
+function S.agoText(ago)
+    if ago < 150 then return "Online" end
+    if ago < 3600 then return "Seen " .. math.floor(ago / 60) .. " min ago" end
+    if ago < 86400 then return "Seen " .. math.floor(ago / 3600) .. " h ago" end
+    return "Seen " .. math.floor(ago / 86400) .. " d ago"
+end
+function S.statusDot(row, online, text)
+    local dot = make("Frame", {
+        Size = UDim2.fromOffset(10, 10), Position = UDim2.new(1, -118, 0.5, -5),
+        BackgroundColor3 = online and Color3.fromRGB(60, 200, 110) or COLORS.grey, BorderSizePixel = 0,
+    }, row)
+    circle(dot)
+    local l = label(row, text, UDim2.fromOffset(102, 20), UDim2.new(1, -104, 0.5, -10), 11, online and COLORS.white or COLORS.muted)
+    l.TextWrapped = false
+    l.TextTruncate = Enum.TextTruncate.AtEnd
+end
+
+function S.refreshScriptFriends()
+    clearList(friendsScroll)
+    local function note(text)
+        local l = label(friendsScroll, text, UDim2.new(1, -12, 0, 30), UDim2.new(), 13, COLORS.muted)
+        l.LayoutOrder = 0
+        return l
+    end
+    if not S.orbis then note("Script friends need the Orbis login.") return end
+    local status = note("Loading script friends...")
+    task.spawn(function()
+        local r = S.orbis.api(player.UserId, "/presence", {})
+        if not status.Parent then return end
+        if not r.ok then status.Text = r.message or "Could not load script friends." return end
+        S.applyPresence(r)
+        status:Destroy()
+        local order = 0
+        local function nextOrder() order += 1 return order end
+        local function header(text)
+            local h = label(friendsScroll, text, UDim2.new(1, -12, 0, 22), UDim2.new(), 12, COLORS.muted, true)
+            h.LayoutOrder = nextOrder()
+        end
+        if #r.incoming > 0 then
+            header("Friend requests (" .. #r.incoming .. ")")
+            for _, q in ipairs(r.incoming) do
+                local row = listRow(friendsScroll, nextOrder(), 54)
+                S.avatarCircle(row, tonumber(q.uid) or 1, 10, 7, 40)
+                rowText(row, q.display, UDim2.fromOffset(62, 8), UDim2.new(1, -260, 0, 20), 14, COLORS.white, true)
+                rowText(row, "@" .. q.name, UDim2.fromOffset(62, 29), UDim2.new(1, -260, 0, 16), 11, COLORS.muted)
+                local acc = button(row, "Accept", UDim2.fromOffset(78, 28), UDim2.new(1, -176, 0.5, -14), COLORS.blue, 12)
+                local dec = button(row, "Decline", UDim2.fromOffset(78, 28), UDim2.new(1, -92, 0.5, -14), COLORS.card, 12)
+                acc.Activated:Connect(function() playSound("Select"); S.friendRespond(q.uid, true) end)
+                dec.Activated:Connect(function() playSound("Select"); S.friendRespond(q.uid, false) end)
+            end
+        end
+        header("Script friends (" .. #r.friends .. ")")
+        if #r.friends == 0 then
+            local l = label(friendsScroll, "No script friends yet. Tap + Add to find people who use this dashboard.",
+                UDim2.new(1, -12, 0, 30), UDim2.new(), 13, COLORS.muted)
+            l.LayoutOrder = nextOrder()
+        end
+        for _, f in ipairs(r.friends) do
+            local row = listRow(friendsScroll, nextOrder(), 54)
+            S.avatarCircle(row, tonumber(f.uid) or 1, 10, 7, 40)
+            rowButton(row, function()
+                openPanel(shortText(f.display, 22), {
+                    { "Copy Username", function() copyText(f.name, "Username") end },
+                    { "Copy User ID", function() copyText(tostring(f.uid), "User ID") end },
+                    { "Remove Friend", function() S.friendRemove(f.uid) end },
+                    { "Cancel" },
+                })
+            end)
+            rowText(row, f.display, UDim2.fromOffset(62, 8), UDim2.new(1, -200, 0, 20), 14, COLORS.white, true)
+            rowText(row, "@" .. f.name, UDim2.fromOffset(62, 29), UDim2.new(1, -200, 0, 16), 11, COLORS.muted)
+            S.statusDot(row, f.online, S.agoText(f.ago))
+        end
+    end)
+end
+
+function S.friendCall(path, extra, okText)
+    task.spawn(function()
+        local r = S.orbis and S.orbis.api(player.UserId, path, extra) or { ok = false, message = "Not signed in." }
+        notify(r.ok and (type(okText) == "function" and okText(r) or okText) or (r.message or "Something went wrong."))
+        if currentPage == "Friends" then S.refreshFriends() end
+    end)
+end
+function S.friendRequest(uid)
+    S.friendCall("/friends/request", { to = tostring(uid) }, function(r) return r.state == "friend" and "You are now friends" or "Friend request sent" end)
+end
+function S.friendRespond(uid, accept)
+    S.friendCall("/friends/respond", { from = tostring(uid), accept = accept }, accept and "Friend added" or "Request declined")
+end
+function S.friendRemove(uid)
+    S.friendCall("/friends/remove", { other = tostring(uid) }, "Friend removed")
+end
+
+function S.addFriendFlow()
+    S.openKeyboard("Find script users", "", {
+        hint = "Type at least 2 letters of a name, then press Done.",
+        onDone = function(text)
+            text = (text:gsub("^%s+", "")):gsub("%s+$", "")
+            if #text < 2 then notify("Type at least 2 letters") return end
+            task.spawn(function()
+                local r = S.orbis and S.orbis.api(player.UserId, "/friends/search", { q = text })
+                if not r or not r.ok then notify(r and r.message or "Not signed in.") return end
+                if #r.users == 0 then notify("No script users found") return end
+                local entries = {}
+                for i, u in ipairs(r.users) do
+                    if i > 8 then break end
+                    local tag = u.state == "friend" and " (friend)" or (u.state == "sent" and " (requested)" or "")
+                    entries[#entries + 1] = { shortText(u.display, 18) .. tag, function()
+                        if u.state == "none" or u.state == "incoming" then S.friendRequest(u.uid)
+                        else notify(u.state == "friend" and "Already friends" or "Already requested") end
+                    end }
+                end
+                entries[#entries + 1] = { "Cancel" }
+                openPanel("Add friend", entries)
+            end)
+        end,
+    })
+end
+
+S.fTab("Roblox", W - 370, 100, "roblox", function() S.friendsTab = "roblox"; S.refreshFriends() end)
+S.fTab("Script Friends", W - 264, 130, "script", function() S.friendsTab = "script"; S.refreshFriends() end)
+S.fTab("+ Add", W - 128, 88, "add", function() S.addFriendFlow() end)
+S.paintFriendTabs()
 
 local function refreshParty()
     clearList(S.partyScroll)
@@ -2167,7 +2315,14 @@ function S.brBuildUI()
     }, urlF)
     S.brLock = S.icon("lock", urlF, 16, COLORS.white, UDim2.new(1, -28, 0, 9))
     S.brLock.Visible = false
-    S.urlBox.Focused:Connect(function() urlS.Transparency = 0 end)
+    S.urlBox.Focused:Connect(function()
+        urlS.Transparency = 0
+        task.defer(function() S.urlBox:ReleaseFocus() end)
+        S.openKeyboard("Enter URL", S.urlBox.Text, {
+            maxLen = 300, hint = "Press Done to open the page.",
+            onDone = function(t) S.urlBox.Text = t; S.brInput(t) end,
+        })
+    end)
     S.urlBox.FocusLost:Connect(function(enter)
         urlS.Transparency = 0.55
         if enter then S.brInput(S.urlBox.Text) end
@@ -2188,7 +2343,14 @@ function S.brBuildUI()
     }, seaF)
     S.icon("triangle", tri, 16, COLORS.muted, UDim2.fromOffset(6, 6))
     tri.Activated:Connect(function() playSound("Select"); S.brSearch(S.searchBox.Text) end)
-    S.searchBox.Focused:Connect(function() seaS.Transparency = 0 end)
+    S.searchBox.Focused:Connect(function()
+        seaS.Transparency = 0
+        task.defer(function() S.searchBox:ReleaseFocus() end)
+        S.openKeyboard("Search the web", S.searchBox.Text, {
+            maxLen = 120, hint = "Press Done to search.",
+            onDone = function(t) S.searchBox.Text = t; S.brSearch(t) end,
+        })
+    end)
     S.searchBox.FocusLost:Connect(function(enter)
         seaS.Transparency = 0.55
         if enter then S.brSearch(S.searchBox.Text) end
@@ -2358,50 +2520,54 @@ hintLabel.TextXAlignment = Enum.TextXAlignment.Center
 hintLabel.Visible = false
 
 S.functionItems = {
-    { "♙", "Friends" }, { "◉", "Party" }, { "✉", "Messages" },
-    { "♧", "Notifications" }, { "★", "Trophies" }, { "⚙", "Settings" }, { "⏻", "Power" },
+    { "Store", "store" }, { "What's New", "info" }, { "Friends", "friends" }, { "Messages", "messages" },
+    { "Party", "party" }, { "Notifications", "bell" }, { "Trophies", "trophy" }, { "Settings", "gear" },
+    { "Power", "power" }, { "Owner", "crown", owner = true },
 }
+S.fnIcons = {}
 
 for index, item in ipairs(S.functionItems) do
-    local x = 24 + (index - 1) * 38
+    local x = 24 + (index - 1) * 33
     local icon = make("TextButton", {
-        Size = UDim2.fromOffset(32, 32),
-        Position = UDim2.fromOffset(x, 22),
+        Size = UDim2.fromOffset(30, 30),
+        Position = UDim2.fromOffset(x, 23),
         BackgroundColor3 = COLORS.white,
         BackgroundTransparency = 1,
         BorderSizePixel = 0, AutoButtonColor = false,
-        Text = "", Font = Enum.Font.GothamMedium,
-        TextSize = 22, TextColor3 = COLORS.white,
+        Text = "", Visible = not item.owner,
     }, S.fb)
     circle(icon)
-    S.icon(({ Friends = "friends", Party = "party", Messages = "messages", Notifications = "bell",
-        Trophies = "trophy", Settings = "gear", Power = "power" })[item[2]], icon, 20, COLORS.white, UDim2.fromOffset(6, 6))
+    S.fnIcons[item[1]] = icon
+    S.icon(item[2], icon, 19, COLORS.white, UDim2.fromOffset(5.5, 5.5))
     local ring = stroke(icon, COLORS.white, 2, 1)
     local function showHint()
         icon.BackgroundTransparency = 0.88
         ring.Transparency = 0.15
-        hintLabel.Text = item[2]
-        hintLabel.Position = UDim2.fromOffset(x + 16 - 55, 58)
+        hintLabel.Text = item[1]
+        hintLabel.Position = UDim2.fromOffset(x + 15 - 55, 58)
         hintLabel.Visible = true
     end
     icon.MouseEnter:Connect(showHint)
     icon.MouseLeave:Connect(function()
         icon.BackgroundTransparency = 1
         ring.Transparency = 1
-        if hintLabel.Text == item[2] then hintLabel.Visible = false end
+        if hintLabel.Text == item[1] then hintLabel.Visible = false end
     end)
     icon.Activated:Connect(function()
         playSound("Select")
         showHint()
-        task.delay(1.5, function() if hintLabel.Text == item[2] then hintLabel.Visible = false end end)
-        local name = item[2]
+        task.delay(1.5, function() if hintLabel.Text == item[1] then hintLabel.Visible = false end end)
+        local name = item[1]
         if name == "Settings" then showPage("Settings")
         elseif name == "Power" then S.openPowerPanel()
+        elseif name == "Store" then openStore()
+        elseif name == "What's New" then S.openNews()
         elseif name == "Friends" then S.refreshFriends(); showPage("Friends")
         elseif name == "Party" then refreshParty(); showPage("Party")
         elseif name == "Messages" then S.refreshMessages(); showPage("Messages")
         elseif name == "Notifications" then refreshNotifications(); showPage("Notifications")
-        elseif name == "Trophies" then S.refreshTrophies(); showPage("Trophies") end
+        elseif name == "Trophies" then S.refreshTrophies(); showPage("Trophies")
+        elseif name == "Owner" then S.openOwnerPanel() end
     end)
 end
 
@@ -2421,7 +2587,7 @@ end)
 
 local avatar = make("ImageButton", {
     Size = UDim2.fromOffset(26, 26),
-    Position = UDim2.fromOffset(346, 25),
+    Position = UDim2.fromOffset(358, 25),
     BackgroundColor3 = COLORS.card,
     BorderSizePixel = 0, Image = "", ZIndex = 5,
 }, main)
@@ -2498,8 +2664,8 @@ end)
 
 -- name + PS Plus icon next to the avatar, trophy level at the right (like the PS4)
 S.nameHolder = make("Frame", {
-    Size = UDim2.fromOffset(150, 26),
-    Position = UDim2.fromOffset(380, 25),
+    Size = UDim2.fromOffset(140, 26),
+    Position = UDim2.fromOffset(392, 25),
     BackgroundTransparency = 1, ZIndex = 5,
 }, main)
 make("UIListLayout", {
@@ -3035,10 +3201,11 @@ function S.drawStoreTile(tile)
     }, hold)
     round(body, 3)
     local c = COLORS.white
-    S.icon("square", body, 12, c, UDim2.fromOffset(11, 8))
-    S.icon("triangle", body, 12, c, UDim2.fromOffset(29, 8))
-    S.icon("cross", body, 12, c, UDim2.fromOffset(11, 24))
-    S.icon("circle", body, 12, c, UDim2.fromOffset(29, 24))
+    -- bag body is 52 x 42; the 2x2 grid is 14px symbols + 6px gap = 34 x 34 -> margins 9 left/right, 4 top/bottom
+    S.icon("square", body, 14, c, UDim2.fromOffset(9, 4))
+    S.icon("triangle", body, 14, c, UDim2.fromOffset(29, 4))
+    S.icon("cross", body, 14, c, UDim2.fromOffset(9, 24))
+    S.icon("circle", body, 14, c, UDim2.fromOffset(29, 24))
     local cap = label(tile, "PlayStation Store", UDim2.new(1, 0, 0, 14), UDim2.new(0, 0, 1, -18), 9, COLORS.white)
     cap.TextXAlignment = Enum.TextXAlignment.Center
     cap.TextWrapped = false
@@ -3200,7 +3367,7 @@ end
 
 function S.buildKeyboard()
     if S.kb then return S.kb end
-    local kb = { value = "", shift = false, sym = false, open = false, blink = true, token = 0 }
+    local kb = { value = "", shift = false, sym = false, open = false, blink = true, token = 0, maxLen = 60 }
     S.kb = kb
     kb.root = make("CanvasGroup", {
         Name = "PS4Keyboard", Size = UDim2.fromScale(1, 1),
@@ -3242,6 +3409,20 @@ function S.buildKeyboard()
         TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd,
     }, field)
     kb.title = label(kb.root, "", UDim2.fromOffset(300, 22), UDim2.fromOffset(40, 8), 12, COLORS.muted)
+    -- invisible TextBox: the "Phone Keyboard" button focuses it so the phone's own keyboard comes up
+    kb.box = make("TextBox", {
+        Size = UDim2.fromOffset(2, 2), Position = UDim2.fromOffset(0, 0), BackgroundTransparency = 1,
+        TextTransparency = 1, Text = "", ClearTextOnFocus = false,
+    }, kb.root)
+    kb.box:GetPropertyChangedSignal("Text"):Connect(function()
+        if kb.open and kb.box:IsFocused() then
+            kb.value = (kb.box.Text:gsub("[\r\n]", "")):sub(1, kb.maxLen)
+            kb.changed()
+        end
+    end)
+    kb.box.FocusLost:Connect(function(enter)
+        if enter and kb.open then kb.close(true) end
+    end)
     make("Frame", {
         Size = UDim2.fromOffset(427, 20), Position = UDim2.fromOffset(40, 76),
         BackgroundColor3 = Color3.fromRGB(0, 40, 120), BackgroundTransparency = 0.55, BorderSizePixel = 0,
@@ -3295,11 +3476,18 @@ function S.buildKeyboard()
     make("UIListLayout", {
         FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 3), SortOrder = Enum.SortOrder.LayoutOrder,
     }, row6)
-    local cancel = S.kbKey(row6, 210, "Cancel", 1)
-    S.icon("circle", cancel, 16, COLORS.muted, UDim2.fromOffset(14, 10))
-    local done = S.kbKey(row6, 214, "Done", 2, Color3.fromRGB(0, 112, 209))
-    S.icon("cross", done, 16, COLORS.white, UDim2.fromOffset(14, 10))
+    local cancel = S.kbKey(row6, 140, "Cancel", 1)
+    S.icon("circle", cancel, 16, COLORS.muted, UDim2.fromOffset(10, 10))
+    local phone = S.kbKey(row6, 140, "Phone Keyboard", 2)
+    phone.TextSize = 12
+    local done = S.kbKey(row6, 141, "Done", 3, Color3.fromRGB(0, 112, 209))
+    S.icon("cross", done, 16, COLORS.white, UDim2.fromOffset(10, 10))
     cancel.Activated:Connect(function() kb.close(false) end)
+    phone.Activated:Connect(function()
+        playSound("Select")
+        kb.box.Text = kb.value
+        kb.box:CaptureFocus()
+    end)
     done.Activated:Connect(function() kb.close(true) end)
 
     -- results panel (right)
@@ -3345,7 +3533,7 @@ function S.buildKeyboard()
         kb.refreshResults()
     end
     function kb.insert(ch)
-        if #kb.value >= 60 then return end
+        if #kb.value >= kb.maxLen then return end
         kb.value = kb.value .. ch
         kb.changed()
     end
@@ -3369,6 +3557,7 @@ function S.buildKeyboard()
         if not kb.open then return end
         kb.open = false
         S.kbOpen = false
+        if kb.box then kb.box:ReleaseFocus() end
         if kb.conn then kb.conn:Disconnect(); kb.conn = nil end
         tween(kb.root, 0.15, { GroupTransparency = 1 })
         task.delay(0.17, function()
@@ -3390,6 +3579,8 @@ function S.openKeyboard(title, initial, opts)
     kb.resultsFn = opts.results
     kb.hintText = opts.hint
     kb.title.Text = title or ""
+    kb.maxLen = opts.maxLen or 60
+    kb.box.Text = kb.value
     kb.shift, kb.sym = false, false
     kb.layout()
     kb.changed()
@@ -3401,7 +3592,7 @@ function S.openKeyboard(title, initial, opts)
     playSound("Open")
     -- a real keyboard works too
     kb.conn = UserInputService.InputBegan:Connect(function(input)
-        if not kb.open or input.UserInputType ~= Enum.UserInputType.Keyboard then return end
+        if not kb.open or kb.box:IsFocused() or input.UserInputType ~= Enum.UserInputType.Keyboard then return end
         local name = input.KeyCode.Name
         if name == "Backspace" then kb.backspace()
         elseif name == "Return" or name == "KeypadEnter" then kb.close(true)
@@ -6129,9 +6320,158 @@ function S.sendNews()
 end
 S.newsSend.Activated:Connect(function() playSound("Select"); S.sendNews() end)
 
+
+-- ===== Presence + Owner panel =====
+-- The dashboard tells the server "I'm online" every minute. Who the OWNER is gets decided by the server
+-- (it checks the Roblox account behind your session), never by this script.
+function S.applyPresence(r)
+    S.pres = r
+    if r.owner and not S.isOwner then
+        S.isOwner = true
+        if S.fnIcons.Owner then S.fnIcons.Owner.Visible = true end
+        notify("Hello Owner")
+        task.delay(3.5, function() -- open the user list once after login, if nothing else is open
+            if S.isOwner and not S.ownerShown and not currentPage and not minimized then
+                S.ownerShown = true
+                S.openOwnerPanel()
+            end
+        end)
+    end
+    local n = #(r.incoming or {})
+    if n > (S.lastReqCount or 0) then notify("New friend request (" .. n .. ")") end
+    S.lastReqCount = n
+end
+
+function S.startPresence()
+    if S.presenceRunning or not S.orbis then return end
+    S.presenceRunning = true
+    task.spawn(function()
+        while gui.Parent do
+            local r = S.orbis.api(player.UserId, "/presence", {})
+            if r.ok then
+                S.applyPresence(r)
+            elseif r.reason == "session_invalid" then
+                notify("Session expired. Restart the dashboard to sign in again.")
+                break
+            end
+            task.wait(60)
+        end
+        S.presenceRunning = false
+    end)
+end
+
+S.ownerPage = makePage("Owner", "Owner Panel")
+S.ownerFilter, S.ownerSort, S.ownerQuery, S.ownerUsers = "all", 1, "", {}
+S.ownerSorts = { "Name: A-Z", "Last seen" }
+S.ownerSummary = label(S.ownerPage, "", UDim2.fromOffset(300, 20), UDim2.fromOffset(W - 340, 34), 13, COLORS.muted)
+S.ownerSummary.TextXAlignment = Enum.TextXAlignment.Right
+S.ownerScroll = makeListScroll(S.ownerPage, 114, H - 114 - 58)
+S.ownerChips = {}
+
+function S.ownerChip(text, x, w, id)
+    local b = button(S.ownerPage, text, UDim2.fromOffset(w, 28), UDim2.fromOffset(x, 76), COLORS.card, 12)
+    S.ownerChips[id] = b
+    b.Activated:Connect(function() playSound("Select"); S.ownerFilter = id; S.renderOwner() end)
+end
+S.ownerChip("All", 40, 80, "all")
+S.ownerChip("Online", 128, 90, "online")
+S.ownerChip("Offline", 226, 90, "offline")
+S.ownerSortBtn = button(S.ownerPage, "Name: A-Z", UDim2.fromOffset(130, 28), UDim2.fromOffset(324, 76), COLORS.card, 12)
+S.ownerSortBtn.Activated:Connect(function()
+    playSound("Select")
+    S.ownerSort = S.ownerSort % #S.ownerSorts + 1
+    S.renderOwner()
+end)
+do -- search bar: outline + icon, opens the keyboard
+    local bar = make("Frame", {
+        Size = UDim2.fromOffset(294, 28), Position = UDim2.fromOffset(466, 76), BackgroundTransparency = 1, BorderSizePixel = 0,
+    }, S.ownerPage)
+    stroke(bar, COLORS.white, 1.5, 0.2)
+    S.icon("search", bar, 16, COLORS.white, UDim2.fromOffset(8, 6))
+    S.ownerSearchLbl = label(bar, "Search users", UDim2.fromOffset(250, 28), UDim2.fromOffset(32, 0), 12, COLORS.white)
+    S.ownerSearchLbl.TextWrapped = false
+    S.ownerSearchLbl.TextTruncate = Enum.TextTruncate.AtEnd
+    local hit = make("TextButton", {
+        Size = UDim2.fromOffset(294, 28), Position = UDim2.fromOffset(466, 76), BackgroundTransparency = 1, Text = "", AutoButtonColor = false,
+    }, S.ownerPage)
+    hit.Activated:Connect(function()
+        playSound("Select")
+        S.openKeyboard("Search users", S.ownerQuery, {
+            hint = "Search by name or user ID.",
+            onDone = function(t) S.ownerQuery = t; S.renderOwner() end,
+            results = function(text)
+                local out, total, q = {}, 0, text:lower()
+                for _, u in ipairs(S.ownerUsers) do
+                    if q == "" or u.name:lower():find(q, 1, true) or u.display:lower():find(q, 1, true) or u.uid:find(q, 1, true) then
+                        total += 1
+                        if #out < 5 then out[#out + 1] = u.display end
+                    end
+                end
+                return out, total
+            end,
+        })
+    end)
+end
+
+function S.renderOwner()
+    for id, b in pairs(S.ownerChips) do b.BackgroundColor3 = (S.ownerFilter == id) and COLORS.blue or COLORS.card end
+    S.ownerSortBtn.Text = S.ownerSorts[S.ownerSort]
+    S.ownerSearchLbl.Text = S.ownerQuery ~= "" and S.ownerQuery or "Search users"
+    clearList(S.ownerScroll)
+    local list, q = {}, S.ownerQuery:lower()
+    for _, u in ipairs(S.ownerUsers) do
+        local passF = S.ownerFilter == "all" or (S.ownerFilter == "online" and u.online) or (S.ownerFilter == "offline" and not u.online)
+        local passQ = q == "" or u.name:lower():find(q, 1, true) or u.display:lower():find(q, 1, true) or u.uid:find(q, 1, true)
+        if passF and passQ then list[#list + 1] = u end
+    end
+    table.sort(list, function(a, b)
+        if S.ownerSort == 2 and a.ago ~= b.ago then return a.ago < b.ago end
+        local x, y = a.name:lower(), b.name:lower()
+        if x ~= y then return x < y end
+        return a.uid < b.uid
+    end)
+    if #list == 0 then
+        local l = label(S.ownerScroll, #S.ownerUsers == 0 and "No users yet." or "No users match.", UDim2.new(1, -12, 0, 30), UDim2.new(), 13, COLORS.muted)
+        l.LayoutOrder = 0
+    end
+    for i, u in ipairs(list) do
+        if i > 200 then break end
+        local row = listRow(S.ownerScroll, i, 54)
+        S.avatarCircle(row, tonumber(u.uid) or 1, 10, 7, 40)
+        rowButton(row, function() S.openPlayerOptions(tonumber(u.uid) or 0, u.name, u.display) end)
+        rowText(row, u.display, UDim2.fromOffset(62, 8), UDim2.new(1, -200, 0, 20), 14, COLORS.white, true)
+        rowText(row, "@" .. u.name .. "  |  ID " .. u.uid, UDim2.fromOffset(62, 29), UDim2.new(1, -200, 0, 16), 11, COLORS.muted)
+        S.statusDot(row, u.online, S.agoText(u.ago))
+    end
+end
+
+function S.refreshOwner()
+    task.spawn(function()
+        local r = S.orbis and S.orbis.api(player.UserId, "/admin/users", {}) or { ok = false, message = "Not signed in." }
+        if not r.ok then notify(r.message or "Could not load users.") return end
+        S.ownerUsers = r.users
+        S.ownerSummary.Text = r.total .. " users  |  " .. r.online .. " online"
+        S.renderOwner()
+    end)
+end
+
+function S.openOwnerPanel()
+    if not S.isOwner then notify("Owner only") return end
+    S.refreshOwner()
+    S.renderOwner()
+    showPage("Owner")
+end
+task.spawn(function() -- keep the list fresh while it is open
+    while gui.Parent do
+        task.wait(20)
+        if S.isOwner and currentPage == "Owner" then S.refreshOwner() end
+    end
+end)
+
 -- automatic check when the dashboard starts (runs after login)
 function S.startup()
   playSound("Home")
+  S.startPresence()
   task.spawn(function()
     local t = S.loadingToast("Checking game")
     local started = tick()

@@ -1376,6 +1376,23 @@ function S.refreshOwnerAccounts()
     end
 end
 
+function S.showOwnerLogs()
+    if not S.isOwner then notify("Owner access required"); return end
+    task.spawn(function()
+        local result = S.orbis and S.orbis.ownerLogs(player.UserId)
+        if not result or not result.ok then
+            S.showDialog(result and result.message or "Could not load Owner action logs.")
+            return
+        end
+        local lines = {}
+        for _, entry in ipairs(result.logs or {}) do
+            local when = os.date("%Y-%m-%d %H:%M:%S", tonumber(entry.at) or 0)
+            table.insert(lines, when .. "  |  " .. tostring(entry.action) .. "  |  User ID: " .. tostring(entry.targetUid))
+        end
+        showInfo("Owner Action Logs", #lines > 0 and table.concat(lines, "\\n") or "No Owner actions recorded yet.")
+    end)
+end
+
 function S.openOwnerPanel()
     if not S.isOwner then notify("Owner access required"); return end
     unlockTrophy("owner_visit")
@@ -5098,6 +5115,7 @@ S.SETTINGS = {
             { type = "info", text = "Owner User ID", value = "8407673016" },
             { type = "info", text = "Access", value = S.isOwner and "Verified Owner" or "Owner only" },
             { type = "action", text = "Open Owner Panel", onclick = function() S.openOwnerPanel() end },
+            { type = "action", text = "View Owner Action Logs", onclick = function() S.showOwnerLogs() end },
         }
     end },
     { id = "Account Management", icon = "♙", build = function()

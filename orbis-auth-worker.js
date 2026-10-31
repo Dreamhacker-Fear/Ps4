@@ -364,6 +364,8 @@ export class AuthState {
         } else if (k.startsWith("rl:")) {
           const [, win, w] = k.split(":");
           if ((Number(w) + 2) * Number(win) <= t) del.push(k);
+        } else if (k.startsWith("ownerlog:")) {
+          if (v && v.at < t - 30 * 86400) del.push(k);
         }
       }
       for (let i = 0; i < del.length; i += 100) await txn.delete(del.slice(i, i + 100));

@@ -5830,7 +5830,11 @@ function S.loginGate(onDone)
                 for idx, q in ipairs(S.login.profiles) do
                     if q == p then table.remove(S.login.profiles, idx) break end
                 end
-                if S.orbis then S.orbis.clear(p.userId) end
+                local stillLinked = false
+                for _, q in ipairs(S.login.profiles) do
+                    if tostring(q.userId) == tostring(p.userId) then stillLinked = true break end
+                end
+                if S.orbis and not stillLinked then S.orbis.clear(p.userId) end
                 S.saveLogin()
                 notify("Profile removed")
                 if alive then showPicker() end

@@ -251,6 +251,10 @@ function Client.ownerVisit(uid)
     return ownerRequest("/owner/visit", uid)
 end
 
+function Client.ownerLogs(uid)
+    return ownerRequest("/owner/logs", uid)
+end
+
 -- Delete saved session
 function Client.clear(uid)
     clearToken(uid)

@@ -5796,7 +5796,12 @@ function S.loginGate(onDone)
             done()
             return
         end
-        local message = r and r.message or "Could not create your Orbis account."
+        if not r or r.reason == "net" or r.reason == "norequest" or r.reason == "server_error" then
+            notify("Signed in. Orbis account setup will retry when the account server is available.")
+            done()
+            return
+        end
+        local message = r.message or "Could not create your Orbis account."
         if string.find(string.lower(message), "taken", 1, true) or string.find(string.lower(message), "usernames", 1, true) then
             S.showDialog(message, nil, "Choose a different Orbis username.", {
                 { "Choose Username", function()

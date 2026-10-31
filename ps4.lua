@@ -5789,6 +5789,11 @@ function S.loginGate(onDone)
                 for idx, q in ipairs(S.login.profiles) do
                     if q == p then table.remove(S.login.profiles, idx) break end
                 end
+                if S.profile == p then
+                    S.profile = nil
+                    if S.userName then S.userName.Text = player.DisplayName end
+                    if S.libUserName then S.libUserName.Text = player.DisplayName end
+                end
                 local stillUsed = false
                 for _, remaining in ipairs(S.login.profiles) do
                     if tostring(remaining.userId) == tostring(p.userId) then stillUsed = true break end
@@ -5826,6 +5831,8 @@ function S.loginGate(onDone)
         if #S.login.profiles == 0 then editMode = false end
         centered("Welcome Back to PlayStation\194\174", 84, 20)
         centered("Who is playing?", 118, 13, COLORS.white)
+        local profileLimitText = tostring(player.UserId) == "8407673016" and "Saved profiles: " .. #S.login.profiles .. " • Unlimited" or "Saved profiles: " .. #S.login.profiles .. " / 5"
+        centered(profileLimitText, 140, 11, COLORS.muted)
         local entries = {}
         local profileLimit = tostring(player.UserId) == "8407673016" and math.huge or 5
         if #S.login.profiles < profileLimit then table.insert(entries, { new = true }) end
@@ -5911,9 +5918,12 @@ function S.loginGate(onDone)
                     Size = UDim2.fromOffset(tw, 114), BackgroundColor3 = COLORS.card, BorderSizePixel = 0, Image = "",
                 }, tile)
                 loadBust(img, p.userId)
-                local nm = label(tile, p.name, UDim2.fromOffset(tw - 22, 54), UDim2.fromOffset(8, 114), 12, COLORS.white, true)
+                local nm = label(tile, p.name, UDim2.fromOffset(tw - 22, 22), UDim2.fromOffset(8, 114), 12, COLORS.white, true)
                 nm.TextTruncate = Enum.TextTruncate.AtEnd
                 nm.TextWrapped = false
+                local accountName = label(tile, "@" .. tostring(p.username or p.userId), UDim2.fromOffset(tw - 16, 18), UDim2.fromOffset(8, 137), 9, COLORS.muted)
+                accountName.TextTruncate = Enum.TextTruncate.AtEnd
+                accountName.TextWrapped = false
                 if S.orbis.load(p.userId) then
                     local plus = label(tile, "+", UDim2.fromOffset(14, 54), UDim2.fromOffset(tw - 20, 114), 16, Color3.fromRGB(255, 196, 0), true)
                     plus.TextXAlignment = Enum.TextXAlignment.Center

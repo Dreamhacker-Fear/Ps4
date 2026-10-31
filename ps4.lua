@@ -1337,6 +1337,109 @@ local function rowButton(row, fn)
     return b
 end
 
+
+-- ===== Orbis account and Premium hub =====
+S.orbisPage = makePage("Orbis", "Orbis")
+S.orbisPage.back.Activated:Connect(function() S.goBack() end)
+
+local orbisStatus = label(S.orbisPage, "Loading Orbis...", UDim2.new(1, -80, 0, 24), UDim2.fromOffset(40, 78), 13, COLORS.muted)
+local orbisPremiumInfo = label(S.orbisPage, "", UDim2.new(1, -80, 0, 64), UDim2.fromOffset(40, 104), 12, COLORS.white)
+orbisPremiumInfo.TextYAlignment = Enum.TextYAlignment.Top
+
+local orbisSearch = make("TextBox", {
+    Size = UDim2.fromOffset(260, 30), Position = UDim2.fromOffset(40, 144),
+    BackgroundColor3 = COLORS.card, BackgroundTransparency = 0.15, BorderSizePixel = 0,
+    Text = "", PlaceholderText = "Search Roblox @ or Orbis username",
+    PlaceholderColor3 = COLORS.muted, TextColor3 = COLORS.white,
+    Font = Enum.Font.Gotham, TextSize = 12, ClearTextOnFocus = false,
+}, S.orbisPage)
+round(orbisSearch, 5)
+make("UIPadding", { PaddingLeft = UDim.new(0, 8) }, orbisSearch)
+
+local orbisSearchBtn = make("TextButton", {
+    Size = UDim2.fromOffset(100, 30), Position = UDim2.fromOffset(310, 144),
+    BackgroundColor3 = Color3.fromRGB(25, 105, 190), BorderSizePixel = 0,
+    Text = "Search", TextColor3 = COLORS.white, Font = Enum.Font.GothamMedium, TextSize = 12,
+}, S.orbisPage)
+round(orbisSearchBtn, 5)
+
+local orbisScroll = makeListScroll(S.orbisPage, 184, H - 238)
+local function orbisRow(order, account, isOwner)
+    local row = listRow(orbisScroll, order, 54)
+    local roblox = account.robloxName and ("@" .. account.robloxName) or ("Roblox ID " .. tostring(account.uid or ""))
+    local detail = roblox .. "  •  Orbis: " .. tostring(account.username or "Unknown")
+    if account.premiumUntil and account.premiumUntil > os.time() then detail = detail .. "  •  PREMIUM" end
+    rowText(row, detail, UDim2.fromOffset(12, 0), UDim2.new(1, -24, 1, 0), 12, COLORS.white, true)
+    if isOwner then
+        rowButton(row, function()
+            openPanel(shortText(account.username or "Orbis account", 18), {
+                { "Owner Visit (notify + trophy)", function()
+                    task.spawn(function()
+                        local r = S.orbis.ownerVisit(player.UserId, account.id)
+                        notify(r.ok and "Owner Visit recorded. Player notified and trophy awarded." or (r.message or "Owner Visit failed."))
+                    end)
+                end },
+                { "Grant Premium (30 days)", function()
+                    task.spawn(function()
+                        local r = S.orbis.ownerPremium(player.UserId, account.uid, 30)
+                        notify(r.ok and "Premium granted for 30 days." or (r.message or "Could not grant Premium."))
+                        S.refreshOrbis(orbisSearch.Text)
+                    end)
+                end },
+                { "Revoke Premium", function()
+                    task.spawn(function()
+                        local r = S.orbis.ownerPremium(player.UserId, account.uid, 0)
+                        notify(r.ok and "Premium revoked." or (r.message or "Could not revoke Premium."))
+                        S.refreshOrbis(orbisSearch.Text)
+                    end)
+                end },
+                { "Cancel" },
+            })
+        end)
+    end
+end
+
+function S.refreshOrbis(query)
+    task.spawn(function()
+        if not S.orbis then
+            orbisStatus.Text = "Orbis service is not loaded. Sign in again and retry."
+            return
+        end
+        local own = S.orbis.accounts(player.UserId)
+        if not own.ok then
+            orbisStatus.Text = own.message or "Could not load Orbis accounts."
+            return
+        end
+        local isOwner = player.UserId == 8407673016
+        orbisStatus.Text = tostring(#(own.accounts or {})) .. " Orbis account(s) linked to this Roblox account."
+        if own.premium then
+            orbisPremiumInfo.Text = "PREMIUM ACTIVE\nUnlimited Orbis accounts • 30-day trusted-device sign-in • Exclusive themes, animated backgrounds, profile frames, badges and trophies."
+        else
+            orbisPremiumInfo.Text = "FREE PLAN\nUp to 3 Orbis accounts. Premium adds more accounts, a 30-day trusted-device sign-in and exclusive themes, animated backgrounds, profile frames, badges and trophies."
+        end
+        clearList(orbisScroll)
+        if isOwner then
+            local r = S.orbis.ownerAccounts(player.UserId, query or "")
+            if not r.ok then
+                orbisStatus.Text = r.message or "Owner Panel could not be loaded."
+                return
+            end
+            orbisStatus.Text = "OWNER PANEL • " .. tostring(#(r.accounts or {})) .. " matching account(s). Select an account for owner actions."
+            for i, account in ipairs(r.accounts or {}) do orbisRow(i, account, true) end
+        else
+            for i, account in ipairs(own.accounts or {}) do orbisRow(i, account, false) end
+        end
+    end)
+end
+
+function S.openOrbis()
+    showPage("Orbis")
+    orbisSearch.Visible = player.UserId == 8407673016
+    orbisSearchBtn.Visible = player.UserId == 8407673016
+    S.refreshOrbis("")
+end
+orbisSearchBtn.Activated:Connect(function() playSound("Select"); S.refreshOrbis(orbisSearch.Text) end)
+
 function S.openPlayerOptions(userId, username, display)
     openPanel(shortText(display, 22), {
         { "Copy Username", function() copyText(username, "Username") end },
@@ -2359,7 +2462,7 @@ hintLabel.Visible = false
 
 S.functionItems = {
     { "♙", "Friends" }, { "◉", "Party" }, { "✉", "Messages" },
-    { "♧", "Notifications" }, { "★", "Trophies" }, { "⚙", "Settings" }, { "⏻", "Power" },
+    { "♧", "Notifications" }, { "★", "Trophies" }, { "◎", "Orbis" }, { "⚙", "Settings" }, { "⏻", "Power" },
 }
 
 for index, item in ipairs(S.functionItems) do
@@ -2375,7 +2478,7 @@ for index, item in ipairs(S.functionItems) do
     }, S.fb)
     circle(icon)
     S.icon(({ Friends = "friends", Party = "party", Messages = "messages", Notifications = "bell",
-        Trophies = "trophy", Settings = "gear", Power = "power" })[item[2]], icon, 20, COLORS.white, UDim2.fromOffset(6, 6))
+        Trophies = "trophy", Orbis = "star", Settings = "gear", Power = "power" })[item[2]], icon, 20, COLORS.white, UDim2.fromOffset(6, 6))
     local ring = stroke(icon, COLORS.white, 2, 1)
     local function showHint()
         icon.BackgroundTransparency = 0.88
@@ -2401,7 +2504,8 @@ for index, item in ipairs(S.functionItems) do
         elseif name == "Party" then refreshParty(); showPage("Party")
         elseif name == "Messages" then S.refreshMessages(); showPage("Messages")
         elseif name == "Notifications" then refreshNotifications(); showPage("Notifications")
-        elseif name == "Trophies" then S.refreshTrophies(); showPage("Trophies") end
+        elseif name == "Trophies" then S.refreshTrophies(); showPage("Trophies")
+        elseif name == "Orbis" then S.openOrbis() end
     end)
 end
 

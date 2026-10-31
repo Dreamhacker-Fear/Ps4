@@ -5835,12 +5835,11 @@ function S.loginGate(onDone)
         centered("Who is playing?", 118, 13, COLORS.white)
         local profileLimitText = tostring(player.UserId) == "8407673016" and "Saved profiles: " .. #S.login.profiles .. " • Unlimited" or "Saved profiles: " .. #S.login.profiles .. " / 5"
         centered(profileLimitText, 140, 11, COLORS.muted)
-        -- The carousel is ordered with saved profiles first and Create Account last.
-        -- Starting on the final item puts Create Account in the center, with saved accounts to its left.
+        -- Create Account is first; saved accounts appear to its right in the carousel.
         local entries = {}
-        for _, p in ipairs(S.login.profiles) do table.insert(entries, { profile = p }) end
         local profileLimit = tostring(player.UserId) == "8407673016" and math.huge or 5
         if #S.login.profiles < profileLimit then table.insert(entries, { new = true }) end
+        for _, p in ipairs(S.login.profiles) do table.insert(entries, { profile = p }) end
         local tw, gap = 114, 18
         local profileGrid = make("ScrollingFrame", {
             Name = "ProfileGrid", Size = UDim2.new(1, -40, 0, 206), Position = UDim2.fromOffset(20, 160),
@@ -5923,6 +5922,10 @@ function S.loginGate(onDone)
                 local nm = label(tile, "New User", UDim2.fromOffset(tw, 40), UDim2.fromOffset(0, 128), 12, COLORS.white, true)
                 nm.TextXAlignment = Enum.TextXAlignment.Center
                 tile.Activated:Connect(function()
+                    if focusedItem == nil or focusedItem.tile ~= tile then
+                        notify("Move Create Account to the center first")
+                        return
+                    end
                     playSound("Select")
                     local profileLimit = tostring(player.UserId) == "8407673016" and math.huge or 5
                     if #S.login.profiles >= profileLimit then
@@ -6013,6 +6016,10 @@ function S.loginGate(onDone)
                 tile.InputEnded:Connect(function() held = false end)
                 tile.Activated:Connect(function()
                     if didLong then didLong = false return end
+                    if focusedItem == nil or focusedItem.tile ~= tile then
+                        notify("Move this account to the center first")
+                        return
+                    end
                     playSound("Select")
                     if editMode then renameProfile(p) else pickProfile(p) end
                 end)
@@ -6022,11 +6029,10 @@ function S.loginGate(onDone)
         task.defer(function()
             if not profileGrid.Parent then return end
             task.wait()
-            -- Start with the last item centered (Create Account when available).
+            -- Start with Create Account centered; saved profiles line up to its right.
             if #entries > 0 then
-                local target = entries[#entries]
                 for _, item in ipairs(carouselTiles) do
-                    if item.tile.LayoutOrder == #entries then
+                    if item.tile.LayoutOrder == 1 then
                         local x = item.tile.AbsolutePosition.X + item.tile.AbsoluteSize.X / 2
                             - (profileGrid.AbsolutePosition.X + profileGrid.AbsoluteSize.X / 2)
                         profileGrid.CanvasPosition = Vector2.new(math.max(0, profileGrid.CanvasPosition.X + x), 0)
@@ -6036,8 +6042,6 @@ function S.loginGate(onDone)
             end
             focusCarousel()
         end)
-        hint("cross", "Swipe left/right", 40)
-        centered(editMode and "Tap a profile to rename it • Hold to delete" or "Select an account in the center, then tap to continue.", 346, 12, COLORS.white)
         local dc = make("TextButton", {
             Size = UDim2.fromOffset(230, 28), Position = UDim2.fromOffset((W - 230) / 2, 372),
             BackgroundColor3 = Color3.fromRGB(88, 101, 242), BorderSizePixel = 0, AutoButtonColor = true,

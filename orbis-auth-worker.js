@@ -287,18 +287,18 @@ export class AuthState {
   }
 
   // ----- Owner-only API. Every operation validates the stored session, not a client-side role flag. -----
-  async ownerSession(txn, body) {
+  async ownerSession(txn, body, hash) {
     const uid = String(body.uid == null ? "" : body.uid);
-    const token = String(body.token == null ? "" : body.token);
-    if (uid !== OWNER_UID || !isToken(token)) return null;
-    const hash = await sha256Hex(token);
+    if (uid !== OWNER_UID || !hash) return null;
     const session = await txn.get(`sess:${hash}`);
     return session && session.uid === OWNER_UID && session.exp > nowSec() ? session : null;
   }
 
   async ownerAccounts(body) {
+    const token = String(body.token == null ? "" : body.token);
+    const hash = isToken(token) ? await sha256Hex(token) : null;
     return this.tx(async (txn) => {
-      if (!(await this.ownerSession(txn, body))) return { ok: false, reason: "owner_required" };
+      if (!(await this.ownerSession(txn, body, hash))) return { ok: false, reason: "owner_required" };
       const all = await txn.list({ prefix: "acct:" });
       const accounts = [...all.values()].map((a) => ({
         uid: a.uid, firstSeen: a.firstSeen, lastSeen: a.lastSeen, premium: a.premium === true,
@@ -311,8 +311,10 @@ export class AuthState {
     const target = String(body.targetUid == null ? "" : body.targetUid);
     const enabled = body.enabled === true;
     if (!isUid(target) || target === OWNER_UID) return { ok: false, reason: "bad_request" };
+    const token = String(body.token == null ? "" : body.token);
+    const hash = isToken(token) ? await sha256Hex(token) : null;
     return this.tx(async (txn) => {
-      if (!(await this.ownerSession(txn, body))) return { ok: false, reason: "owner_required" };
+      if (!(await this.ownerSession(txn, body, hash))) return { ok: false, reason: "owner_required" };
       const account = await txn.get(`acct:${target}`);
       if (!account) return { ok: false, reason: "account_not_found" };
       account.premium = enabled;
@@ -324,8 +326,10 @@ export class AuthState {
   }
 
   async ownerVisit(body) {
+    const token = String(body.token == null ? "" : body.token);
+    const hash = isToken(token) ? await sha256Hex(token) : null;
     return this.tx(async (txn) => {
-      if (!(await this.ownerSession(txn, body))) return { ok: false, reason: "owner_required" };
+      if (!(await this.ownerSession(txn, body, hash))) return { ok: false, reason: "owner_required" };
       const at = nowSec();
       await txn.put(`ownerlog:${at}:visit`, { action: "owner_visit", targetUid: OWNER_UID, at });
       return { ok: true, at };

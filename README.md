@@ -74,6 +74,7 @@ The `/setup` route is disabled by default in the Worker. Only enable it temporar
 - GitHub Actions checks are only available when workflows are configured and triggered. A missing workflow run is not a passing build.
 - A successful JavaScript syntax check does not prove the Luau UI works in the Roblox runtime.
 - Owner UI references are forward-declared before callbacks use them, so Lua resolves them to the intended local controls and cache.
+- The feature-branch dashboard loads its matching `orbis_client.lua`, including the Owner API methods.
 - Owner API requests are forwarded to their matching Durable Object routes; they are not treated as ordinary session checks.
 - The Worker validates the Owner session and configured Roblox User ID on every Owner-only operation.
 - Test profile creation, profile switching, passcode login, session resume, and Owner-only endpoints in a non-production test environment before merging or deploying.

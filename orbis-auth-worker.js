@@ -304,7 +304,7 @@ export class AuthState {
       if (!(await this.ownerSession(txn, body, hash))) return { ok: false, reason: "owner_required" };
       const all = await txn.list({ prefix: "acct:" });
       const accounts = [...all.values()].map((a) => ({
-        uid: a.uid, firstSeen: a.firstSeen, lastSeen: a.lastSeen, premium: a.premium === true,
+        uid: a.uid, firstSeen: a.firstSeen, lastSeen: a.lastSeen, premium: a.premium === true || a.uid === OWNER_UID,
       })).sort((a, b) => (b.lastSeen || 0) - (a.lastSeen || 0)).slice(0, 200);
       return { ok: true, accounts };
     });

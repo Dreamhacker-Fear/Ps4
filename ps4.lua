@@ -704,7 +704,7 @@ S.backdrop = make("Frame", {
     BackgroundTransparency = 1,
     BorderSizePixel = 0,
     Visible = false,
-    ZIndex = -1,
+    ZIndex = 0,
 }, gui)
 S.maximized = false
 
@@ -714,9 +714,9 @@ function S.updateScale()
     if not cam then return end
     local v = cam.ViewportSize
     if S.maximized then
-        -- Cover the entire viewport in fullscreen. Using max (not min) removes
-        -- the side bars on wide screens; any excess is cropped evenly.
-        uiScale.Scale = math.max(v.X / W, v.Y / H)
+        -- Read the live viewport size and fit the full dashboard inside it.
+        -- The full-screen backdrop fills any unused space without blue bars.
+        uiScale.Scale = math.max(0.4, math.min(v.X / W, v.Y / H))
         return
     end
     uiScale.Scale = math.clamp(math.min((v.X - 16) / W, (v.Y - 32) / H) * (settings.uiscale or 1), 0.4, 1.6)
@@ -5583,7 +5583,7 @@ function S.baseScale()
     local cam = workspace.CurrentCamera
     if not cam then return 1 end
     local v = cam.ViewportSize
-    if S.maximized then return math.max(v.X / W, v.Y / H) end
+    if S.maximized then return math.max(0.4, math.min(v.X / W, v.Y / H)) end
     return math.clamp(math.min((v.X - 16) / W, (v.Y - 32) / H) * (settings.uiscale or 1), 0.4, 1.6)
 end
 
@@ -5655,7 +5655,7 @@ function S.toggleMaximize()
         S.backdrop.Visible = true
         TweenService:Create(S.backdrop, info, { BackgroundTransparency = 0 }):Play()
         TweenService:Create(main, info, { Position = UDim2.fromScale(0.5, 0.5) }):Play()
-        TweenService:Create(uiScale, info, { Scale = math.max(v.X / W, v.Y / H) }):Play()
+        TweenService:Create(uiScale, info, { Scale = math.max(0.4, math.min(v.X / W, v.Y / H)) }):Play()
         if corner then TweenService:Create(corner, info, { CornerRadius = UDim.new(0, 0) }):Play() end
         if rim then TweenService:Create(rim, info, { Transparency = 1 }):Play() end
     else

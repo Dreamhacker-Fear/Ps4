@@ -1338,6 +1338,9 @@ local function rowButton(row, fn)
     return b
 end
 
+local ownerSearch, ownerScroll
+local ownerAccountsCache = {}
+
 function S.refreshOwnerAccounts()
     clearList(ownerScroll)
     local query = tostring(ownerSearch.Text or ""):lower():gsub("^@", "")
@@ -1452,7 +1455,7 @@ S.partyScroll = makeListScroll(S.partyPage)
 local notifScroll = makeListScroll(S.notifPage)
 S.trophyScroll = makeListScroll(S.trophyPage)
 local msgScroll = makeListScroll(messagesPage, 84, 272)
-local ownerSearch = make("TextBox", {
+ownerSearch = make("TextBox", {
     Size = UDim2.new(1, -80, 0, 30), Position = UDim2.fromOffset(40, 78),
     BackgroundColor3 = COLORS.card, BackgroundTransparency = 0.25, BorderSizePixel = 0,
     Text = "", PlaceholderText = "Search by Roblox @username or User ID", PlaceholderColor3 = COLORS.muted,
@@ -1462,8 +1465,7 @@ local ownerSearch = make("TextBox", {
 round(ownerSearch, 5)
 make("UIPadding", { PaddingLeft = UDim.new(0, 10) }, ownerSearch)
 ownerSearch.FocusLost:Connect(function() S.refreshOwnerAccounts() end)
-local ownerScroll = makeListScroll(ownerPage, 118, H - 188)
-local ownerAccountsCache = {}
+ownerScroll = makeListScroll(ownerPage, 118, H - 188)
 
 local TROPHIES = {
     { id = "first_dl", name = "First Download", desc = "Download your first script", grade = "Bronze" },

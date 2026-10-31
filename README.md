@@ -75,4 +75,4 @@ The `/setup` route is disabled by default in the Worker. Only enable it temporar
 
 ## Cloudflare preview build note
 
-The stable `main` branch Wrangler configuration now includes the `PSN_USERS` entry under `previews.kv_namespaces`, using the preview namespace ID requested by the Cloudflare build log. This is preview-only; the feature branch Worker continues to use the `AUTH` Durable Object for its current authentication flow. The preview mapping does not change the production Worker deployment or the Roblox loadstring.
+Both `main` and `feature/owner-system` Wrangler configurations include the `PSN_USERS` entry under `previews.kv_namespaces`, using the preview namespace ID requested by the Cloudflare build log. This is preview-only; the feature branch Worker continues to use the `AUTH` Durable Object for its current authentication flow. The preview mapping does not change the production Worker deployment or the Roblox loadstring.

@@ -120,6 +120,7 @@ export class AuthState {
       else if (path === "/owner/accounts") out = await this.ownerAccounts(body);
       else if (path === "/owner/premium") out = await this.ownerPremium(body);
       else if (path === "/owner/visit") out = await this.ownerVisit(body);
+      else if (path === "/owner/logs") out = await this.ownerLogs(body);
       else out = { ok: false, reason: "bad_request" };
     } catch (e) {
       out = { ok: false, reason: e instanceof SyntaxError ? "bad_request" : "server_error" };
@@ -338,6 +339,17 @@ export class AuthState {
     });
   }
 
+  async ownerLogs(body) {
+    const token = String(body.token == null ? "" : body.token);
+    const hash = isToken(token) ? await sha256Hex(token) : null;
+    return this.tx(async (txn) => {
+      if (!(await this.ownerSession(txn, body, hash))) return { ok: false, reason: "owner_required" };
+      const all = await txn.list({ prefix: "ownerlog:" });
+      const logs = [...all.values()].sort((a, b) => (b.at || 0) - (a.at || 0)).slice(0, 50);
+      return { ok: true, logs };
+    });
+  }
+
   // ----- hourly cleanup of expired data -----
   async alarm() {
     const remaining = await this.tx(async (txn) => {
@@ -480,7 +492,7 @@ export default {
     const { pathname } = new URL(request.url);
     if (request.method === "GET" && pathname === "/") return new Response("Orbis Auth is online.");
     if (pathname === "/setup") return handleSetup(request, env);
-    if (pathname === "/verify" || pathname === "/session" || pathname === "/owner/accounts" || pathname === "/owner/premium" || pathname === "/owner/visit") return handleAuthPost(request, env, pathname);
+    if (pathname === "/verify" || pathname === "/session" || pathname === "/owner/accounts" || pathname === "/owner/premium" || pathname === "/owner/visit" || pathname === "/owner/logs") return handleAuthPost(request, env, pathname);
     if (request.method === "POST" && (pathname === "/" || pathname === "/interactions")) return handleDiscord(request, env);
     return new Response("Not found", { status: 404 });
   },

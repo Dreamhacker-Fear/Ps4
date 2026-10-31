@@ -773,24 +773,15 @@ S.systemRail = make("Frame", {
 
 S.homeMark = make("Frame", {
     Name = "HomeMark",
-    Size = UDim2.fromOffset(66, 28),
-    Position = UDim2.fromOffset(270, 21),
+    Size = UDim2.fromOffset(42, 28),
+    Position = UDim2.fromOffset(294, 21),
     BackgroundTransparency = 1,
     BorderSizePixel = 0,
     ZIndex = 5,
 }, main)
-local homeMarkText = label(S.homeMark, "PS4", UDim2.fromOffset(27, 28), UDim2.fromOffset(0, 0), 14, COLORS.white, true)
+local homeMarkText = label(S.homeMark, "PS4", UDim2.fromOffset(42, 28), UDim2.fromOffset(0, 0), 13, COLORS.white, true)
 homeMarkText.TextWrapped = false
-local homeMarkDivider = make("Frame", {
-    Size = UDim2.fromOffset(1, 15),
-    Position = UDim2.fromOffset(32, 7),
-    BackgroundColor3 = COLORS.white,
-    BackgroundTransparency = 0.55,
-    BorderSizePixel = 0,
-    ZIndex = 5,
-}, S.homeMark)
-local homeMarkSub = label(S.homeMark, "HOME", UDim2.fromOffset(32, 28), UDim2.fromOffset(39, 0), 9, COLORS.muted, true)
-homeMarkSub.TextWrapped = false
+homeMarkText.TextXAlignment = Enum.TextXAlignment.Center
 
 -- A restrained blue bloom gives the wallpaper depth without covering tiles or controls.
 S.wallpaperBloom = make("Frame", {

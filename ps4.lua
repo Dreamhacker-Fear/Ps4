@@ -5784,7 +5784,7 @@ function S.loginGate(onDone)
     end
 
     local function confirmDelete(p)
-        S.showDialog('Delete the profile "' .. p.name .. '"?', nil, "Its saved login is removed too.", {
+        S.showDialog('Delete the profile "' .. p.name .. '"?', nil, "This removes the saved dashboard profile.", {
             { "Delete", function()
                 for idx, q in ipairs(S.login.profiles) do
                     if q == p then table.remove(S.login.profiles, idx) break end
@@ -5831,12 +5831,23 @@ function S.loginGate(onDone)
         if #S.login.profiles < profileLimit then table.insert(entries, { new = true }) end
         for _, p in ipairs(S.login.profiles) do table.insert(entries, { profile = p }) end
         local tw, gap = 114, 14
-        local x0 = (W - (#entries * tw + (#entries - 1) * gap)) / 2
+        local columns = math.max(1, math.floor((W - 40 + gap) / (tw + gap)))
+        local rows = math.ceil(#entries / columns)
+        local gridWidth = columns * tw + (columns - 1) * gap
+        local x0 = (W - gridWidth) / 2
+        local profileGrid = make("ScrollingFrame", {
+            Name = "ProfileGrid", Size = UDim2.new(1, -40, 0, 174), Position = UDim2.fromOffset(20, 160),
+            BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 5,
+            CanvasSize = UDim2.fromOffset(0, math.max(174, rows * 178)),
+            ScrollingDirection = Enum.ScrollingDirection.Y,
+        }, holder)
         for i, en in ipairs(entries) do
+            local col = (i - 1) % columns
+            local rowIndex = math.floor((i - 1) / columns)
             local tile = make("TextButton", {
-                Size = UDim2.fromOffset(tw, 168), Position = UDim2.fromOffset(x0 + (i - 1) * (tw + gap), 170),
+                Size = UDim2.fromOffset(tw, 168), Position = UDim2.fromOffset(x0 - 20 + col * (tw + gap), rowIndex * 178),
                 BackgroundColor3 = Color3.fromRGB(28, 112, 218), BorderSizePixel = 0, AutoButtonColor = false, Text = "",
-            }, holder)
+            }, profileGrid)
             local st = stroke(tile, COLORS.white, 3, 1)
             tile.MouseEnter:Connect(function() st.Transparency = 0 end)
             tile.MouseLeave:Connect(function() st.Transparency = 1 end)

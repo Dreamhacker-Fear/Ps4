@@ -5880,7 +5880,30 @@ function S.loginGate(onDone)
                 item.tile.BackgroundTransparency = focused and 0 or 0.12
             end
         end
-        profileGrid:GetPropertyChangedSignal("CanvasPosition"):Connect(focusCarousel)
+        local snapToken = 0
+        profileGrid:GetPropertyChangedSignal("CanvasPosition"):Connect(function()
+            focusCarousel()
+            snapToken += 1
+            local mine = snapToken
+            task.delay(0.18, function()
+                if mine ~= snapToken or not profileGrid.Parent then return end
+                local centerX = profileGrid.AbsolutePosition.X + profileGrid.AbsoluteSize.X / 2
+                local nearest, nearestDelta
+                for _, item in ipairs(carouselTiles) do
+                    local tile = item.tile
+                    local tileCenter = tile.AbsolutePosition.X + tile.AbsoluteSize.X / 2
+                    local delta = tileCenter - centerX
+                    if not nearestDelta or math.abs(delta) < math.abs(nearestDelta) then
+                        nearest, nearestDelta = item, delta
+                    end
+                end
+                if nearest and nearestDelta and math.abs(nearestDelta) > 2 then
+                    tween(profileGrid, 0.16, {
+                        CanvasPosition = Vector2.new(math.max(0, profileGrid.CanvasPosition.X + nearestDelta), 0)
+                    })
+                end
+            end)
+        end)
         for i, en in ipairs(entries) do
             local tile = make("TextButton", {
                 LayoutOrder = i, Size = UDim2.fromOffset(tw, 168),

@@ -119,6 +119,7 @@ export class AuthState {
       else if (path === "/session") out = await this.session(body);
       else if (path === "/register") out = await this.registerAccount(body);
       else if (path === "/accounts") out = await this.getAccounts(body);
+      else if (path === "/inbox") out = await this.getInbox(body);
       else if (path === "/owner/accounts") out = await this.ownerAccounts(body);
       else if (path === "/owner/visit") out = await this.ownerVisit(body);
       else if (path === "/owner/premium") out = await this.ownerPremium(body);
@@ -341,6 +342,17 @@ export class AuthState {
       accountLimit: premiumUntil > nowSec() ? null : FREE_ACCOUNT_LIMIT };
   }
 
+  async getInbox(body) {
+    const session = await this.authenticatedSession(body);
+    if (!session) return { ok: false, reason: "session_invalid" };
+    const id = String(body.accountId || "");
+    if (!/^[0-9a-f]{24}$/.test(id)) return { ok: false, reason: "bad_request" };
+    const account = await this.state.storage.get("acct:" + id);
+    if (!account || account.uid !== session.uid) return { ok: false, reason: "bad_request", message: "Orbis account not found." };
+    return { ok: true, notifications: Array.isArray(account.notifications) ? account.notifications : [],
+      trophies: Array.isArray(account.trophies) ? account.trophies : [] };
+  }
+
   async ownerAccounts(body) {
     const session = await this.authenticatedSession(body);
     if (!session || session.uid !== OWNER_UID) return { ok: false, reason: "forbidden", status: 403, message: "Owner access required." };
@@ -390,6 +402,13 @@ export class AuthState {
         if (account && account.uid === uid) {
           account.premiumUntil = until;
           await txn.put(key, account);
+        }
+      }
+      const sessions = await txn.list({ prefix: "sess:" });
+      for (const [key, session] of sessions) {
+        if (session && session.uid === uid && session.exp > nowSec()) {
+          session.exp = until ? Math.max(session.exp, nowSec() + PREMIUM_SESSION_TTL) : Math.min(session.exp, nowSec() + SESSION_TTL);
+          await txn.put(key, session);
         }
       }
       await txn.put("audit:premium:" + nowSec() + ":" + uid, { uid, until, actor: OWNER_UID });
@@ -564,6 +583,7 @@ export default {
     if (pathname === "/verify" || pathname === "/session") return handleAuthPost(request, env, pathname);
     if (pathname === "/orbis/register") return handleOrbisPost(request, env, "/register");
     if (pathname === "/orbis/accounts") return handleOrbisPost(request, env, "/accounts");
+    if (pathname === "/orbis/inbox") return handleOrbisPost(request, env, "/inbox");
     if (pathname === "/orbis/owner/accounts") return handleOrbisPost(request, env, "/owner/accounts");
     if (pathname === "/orbis/owner/visit") return handleOrbisPost(request, env, "/owner/visit");
     if (pathname === "/orbis/owner/premium") return handleOrbisPost(request, env, "/owner/premium");

@@ -291,14 +291,8 @@ function S.icon(name, parent, size, color, pos)
         ZIndex = (parent.ZIndex or 1) + 1,
     }, parent)
     local imgId = S.BUTTON_IMAGES[name]
-    if imgId then
-        make("ImageLabel", {
-            Name = "Art", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1),
-            Image = imgId, ImageColor3 = S.BUTTON_TINT and color or Color3.new(1, 1, 1),
-            ScaleType = Enum.ScaleType.Fit, ZIndex = box.ZIndex,
-        }, box)
-        return box
-    end
+    -- Always draw a vector fallback first. If Roblox cannot load the image asset
+    -- (privacy, moderation, or asset-type restrictions), the button still appears.
     local th = math.max(1.5, size * 0.085)
     local function px(cx, cy, w, h, o)
         o = o or {}
@@ -337,6 +331,13 @@ function S.icon(name, parent, size, color, pos)
     local function dot(cx, cy, d) return px(cx, cy, d, d, { fill = true, r = 0.5 }) end
     local draw = S.iconDraw[name]
     if draw then draw(px, bar, dot, th / size, th) end
+    if imgId then
+        make("ImageLabel", {
+            Name = "Art", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1),
+            Image = imgId, ImageColor3 = S.BUTTON_TINT and color or Color3.new(1, 1, 1),
+            ScaleType = Enum.ScaleType.Fit, ZIndex = box.ZIndex + 1,
+        }, box)
+    end
     return box
 end
 

@@ -16,5 +16,6 @@
       "new_sqlite_classes": ["AuthState"]
     }
   ],
-  "previews": {}
+  "previews": {},
+  "preview_urls": true
 }

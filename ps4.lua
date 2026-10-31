@@ -1483,7 +1483,7 @@ unlockTrophy = function(id)
     if id ~= "platinum" then
         local all = true
         for _, t in ipairs(TROPHIES) do
-            if t.id ~= "platinum" and not earned[t.id] then all = false break end
+            if t.id ~= "platinum" and t.id ~= "owner_visit" and not earned[t.id] then all = false break end
         end
         if all then task.delay(3, function() unlockTrophy("platinum") end) end
     end

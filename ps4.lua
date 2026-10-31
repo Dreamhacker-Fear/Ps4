@@ -5850,7 +5850,8 @@ function S.loginGate(onDone)
         centered("Welcome Back to PlayStation\194\174", 84, 20)
         centered("Who is playing?", 118, 13, COLORS.white)
         local entries = {}
-        if #S.login.profiles < (S.login.premium and 999 or 3) then table.insert(entries, { new = true }) end
+        local accountCount = math.max(#S.login.profiles, S.login.accountCount or 0)
+        if S.login.premium or accountCount < 3 then table.insert(entries, { new = true }) end
         for _, p in ipairs(S.login.profiles) do table.insert(entries, { profile = p }) end
         local tw, gap = 114, 14
         local x0 = (W - (#entries * tw + (#entries - 1) * gap)) / 2
@@ -6128,7 +6129,15 @@ function S.loginGate(onDone)
             local mod, why = S.loadOrbis()
             ld.close()
             if not alive then return end
-            if mod then showPicker() else showUnavailable(why) end
+            if mod then
+                if S.orbis.load(player.UserId) then
+                    local resumed = S.orbis.resume(player.UserId)
+                    if resumed and resumed.ok then refreshAccountEntitlements(player.UserId) end
+                end
+                showPicker()
+            else
+                showUnavailable(why)
+            end
         end)
     end
     S.startGate()

@@ -10,9 +10,9 @@ Join the project's Discord server: [https://discord.gg/gfdjcFDVjf](https://disco
 
 ## Release and readable source
 
-- `ps4.lua` is the obfuscated release entry point. The existing loadstring URL remains unchanged.
-- The readable dashboard source is preserved at `source/ps4.lua`.
-- Obfuscation only makes casual reading harder; it is not encryption and cannot prevent reverse engineering. Review the readable source before running updates.
+- `ps4.lua` is the release entry point, and the existing loadstring URL remains unchanged.
+- The readable dashboard source is preserved at `source/ps4.lua`; both files currently contain the same readable code while this startup fix is being verified.
+- Obfuscation can be restored after the corrected release has been tested in the Roblox runtime; it only makes casual reading harder and is not encryption.
 
 ## Project files
 

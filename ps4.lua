@@ -1389,7 +1389,7 @@ function S.showOwnerLogs()
             local when = os.date("%Y-%m-%d %H:%M:%S", tonumber(entry.at) or 0)
             table.insert(lines, when .. "  |  " .. tostring(entry.action) .. "  |  User ID: " .. tostring(entry.targetUid))
         end
-        showInfo("Owner Action Logs", #lines > 0 and table.concat(lines, "\\n") or "No Owner actions recorded yet.")
+        showInfo("Owner Action Logs", #lines > 0 and table.concat(lines, "\n") or "No Owner actions recorded yet.")
     end)
 end
 

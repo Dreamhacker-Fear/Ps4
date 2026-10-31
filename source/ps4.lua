@@ -1377,13 +1377,25 @@ local function rowButton(row, fn)
     return b
 end
 
-function S.openPlayerOptions(userId, username, display)
-    openPanel(shortText(display, 22), {
+function S.openPlayerOptions(userId, username, display, premium)
+    local actions = {
         { "Copy Username", function() copyText(username, "Username") end },
         { "Copy User ID", function() copyText(tostring(userId), "User ID") end },
         { "Copy Profile Link", function() copyText("https://www.roblox.com/users/" .. userId .. "/profile", "Profile link") end },
+        { premium and "Revoke Premium" or "Grant Premium", function()
+            task.spawn(function()
+                local r = S.orbis and S.orbis.setPremium(player.UserId, userId, not premium)
+                if r and r.ok then
+                    notify(not premium and "Premium granted" or "Premium revoked")
+                    S.refreshOwner()
+                else
+                    notify(r and r.message or "Could not update Premium.")
+                end
+            end)
+        end },
         { "Cancel" },
-    })
+    }
+    openPanel(shortText(display, 22), actions)
 end
 
 function S.avatarCircle(parent, userId, x, y, size)
@@ -6588,6 +6600,7 @@ function S.startPresence()
         if r and r.ok then
             S.isOwner = true
             if S.fnIcons.Owner then S.fnIcons.Owner.Visible = true end
+            pcall(function() S.orbis.ownerVisit(player.UserId) end)
             notify("Hello Owner")
             task.delay(3.5, function()
                 if S.isOwner and not S.ownerShown and not currentPage and not minimized then
@@ -6679,7 +6692,7 @@ function S.renderOwner()
         if i > 200 then break end
         local row = listRow(S.ownerScroll, i, 54)
         S.avatarCircle(row, tonumber(u.uid) or 1, 10, 7, 40)
-        rowButton(row, function() S.openPlayerOptions(tonumber(u.uid) or 0, u.name, u.display) end)
+        rowButton(row, function() S.openPlayerOptions(tonumber(u.uid) or 0, u.name, u.display, u.premium) end)
         rowText(row, u.display, UDim2.fromOffset(62, 8), UDim2.new(1, -200, 0, 20), 14, COLORS.white, true)
         rowText(row, "@" .. u.name .. "  |  ID " .. u.uid, UDim2.fromOffset(62, 29), UDim2.new(1, -200, 0, 16), 11, COLORS.muted)
         S.statusDot(row, u.online, S.agoText(u.ago))

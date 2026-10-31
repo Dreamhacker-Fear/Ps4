@@ -229,4 +229,43 @@ function Client.clear(uid)
     clearToken(uid)
 end
 
+
+-- Orbis account registry and owner tools. All endpoints authenticate with the
+-- saved server-issued session token; client-supplied roles are never trusted.
+local function accountRequest(path, uid, payload)
+    uid = tostring(uid or "")
+    local token = readToken(uid)
+    if not token then
+        return { ok = false, reason = "session_invalid", message = "Sign in again to continue." }
+    end
+    payload = payload or {}
+    payload.uid = uid
+    payload.token = token
+    return post(path, payload)
+end
+
+function Client.register(username, uid)
+    return accountRequest("/orbis/register", uid, { username = tostring(username or "") })
+end
+
+function Client.accounts(uid)
+    return accountRequest("/orbis/accounts", uid, {})
+end
+
+function Client.ownerAccounts(uid, query)
+    return accountRequest("/orbis/owner/accounts", uid, { query = tostring(query or "") })
+end
+
+function Client.ownerVisit(uid, accountId)
+    return accountRequest("/orbis/owner/visit", uid, { accountId = tostring(accountId or "") })
+end
+
+-- days=30 grants one month; days=0 revokes Premium.
+function Client.ownerPremium(uid, targetUid, days)
+    return accountRequest("/orbis/owner/premium", uid, {
+        targetUid = tostring(targetUid or ""),
+        days = tonumber(days) or 30,
+    })
+end
+
 return Client

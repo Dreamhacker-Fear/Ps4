@@ -1,232 +1,167 @@
--- Orbis Auth v2 Client
--- Required by ps4.lua
--- 4-digit passcodes + persistent sessions
+-- Orbis Auth client (remote module, no UI). Host this file in your GitHub repo and load it from the dashboard:
+--   local Orbis = loadstring(game:HttpGet("https://raw.githubusercontent.com/Dreamhacker-Fear/Ps4/main/orbis_client.lua"))()
+-- Updating this file updates the login logic for everyone without a new dashboard download.
+--
+--   Orbis.verify(code, userId)  -> first login:  POST /verify  {uid, code}   (code = exactly 4 digits)
+--   Orbis.resume(userId)        -> later launches: POST /session {uid, token}
+--   Orbis.clear(userId)         -> forget the saved session (log out)
+-- Every call returns a table: { ok = true }  or  { ok = false, reason = "...", message = "text for the GUI", retry = seconds|nil }
+--   Orbis.api(userId, path, extra) -> signed-in call (/presence, /friends/..., /admin/users)
+-- reason is one of: forbidden, not_found, limit_reached, invalid, proof_missing, ownership_unavailable, rate_limited, session_invalid,
+--                   bad_request, server_error, net, norequest, none
 
 local HttpService = game:GetService("HttpService")
 
-local API = "https://ps4.lucaebraeuer.workers.dev"
+local M = {}
+M.WORKER = "https://ps4.lucaebraeuer.workers.dev"
+M.DISCORD = "https://discord.gg/9aefrXgRjf"
+M.CODE_LEN = 4
+M.FILE = "ps4_orbis_session.json"
 
-local Client = {}
-local cachedTokens = {}
+local TEXT = {
+    invalid = "Wrong, expired or already used passcode. Run /psn in Discord for a fresh one.",
+    proof_missing = "Add the phrase from your /psn message to the About section of your Roblox profile, then try again.",
+    ownership_unavailable = "Could not check your Roblox profile right now. Try again in a moment.",
+    rate_limited = "Too many attempts. Please wait a moment.",
+    session_invalid = "Your session expired. Run /psn in Discord for a new passcode.",
+    bad_request = "That request was not valid.",
+    server_error = "The login server had a problem. Try again in a moment.",
+    net = "Cannot reach the login server. Check your connection and try again.",
+    norequest = "Your executor cannot send secure login requests (it needs request / http_request).",
+    forbidden = "This is only available to the owner.",
+    not_found = "That user was not found.",
+    limit_reached = "That list is full.",
+}
 
-local function getRequest()
-    if syn and syn.request then return syn.request end
-    if http and http.request then return http.request end
-    if http_request then return http_request end
-    if request then return request end
-    if fluxus and fluxus.request then return fluxus.request end
-    return nil
+-- ---------- saved sessions (one per Roblox user id) ----------
+local mem = {}
+local function canFile()
+    return type(writefile) == "function" and type(readfile) == "function" and type(isfile) == "function"
+end
+local function readAll()
+    if not canFile() or not isfile(M.FILE) then return {} end
+    local ok, data = pcall(function() return HttpService:JSONDecode(readfile(M.FILE)) end)
+    if ok and type(data) == "table" and type(data.sessions) == "table" then return data.sessions end
+    return {}
+end
+local function writeAll(sessions)
+    if not canFile() then return end
+    pcall(function() writefile(M.FILE, HttpService:JSONEncode({ sessions = sessions })) end)
 end
 
-local function fileName(uid)
-    return "orbis_session_" .. tostring(uid) .. ".json"
-end
-
-local function saveToken(uid, token)
+function M.load(uid)
     uid = tostring(uid)
-    cachedTokens[uid] = token
+    local s = mem[uid] or readAll()[uid]
+    if type(s) == "table" and type(s.token) == "string" then return s end
 
-    if type(writefile) == "function" then
-        pcall(function()
-            writefile(fileName(uid), HttpService:JSONEncode({
-                token = token
-            }))
-        end)
-    end
-end
-
-local function readToken(uid)
-    uid = tostring(uid)
-
-    if cachedTokens[uid] then
-        return cachedTokens[uid]
-    end
-
-    if type(isfile) ~= "function"
-        or type(readfile) ~= "function" then
-        return nil
-    end
-
-    local ok, data = pcall(function()
-        if not isfile(fileName(uid)) then return nil end
-        return HttpService:JSONDecode(readfile(fileName(uid)))
-    end)
-
-    if ok and type(data) == "table"
-        and type(data.token) == "string"
-        and data.token:match("^[0-9a-f]+$")
-        and #data.token == 64 then
-
-        cachedTokens[uid] = data.token
-        return data.token
-    end
-
-    return nil
-end
-
-local function clearToken(uid)
-    uid = tostring(uid)
-    cachedTokens[uid] = nil
-
-    if type(delfile) == "function"
-        and type(isfile) == "function" then
-        pcall(function()
-            if isfile(fileName(uid)) then
-                delfile(fileName(uid))
+    -- Migrate sessions saved by the previous Orbis client (one file per Roblox user).
+    if canFile() then
+        local legacy = "orbis_session_" .. uid .. ".json"
+        if isfile(legacy) then
+            local ok, data = pcall(function() return HttpService:JSONDecode(readfile(legacy)) end)
+            if ok and type(data) == "table" and type(data.token) == "string"
+                and #data.token == 64 and data.token:match("^[0-9a-f]+$") then
+                s = { token = data.token, exp = tonumber(data.exp) }
+                M.save(uid, s.token, s.exp)
+                return s
             end
-        end)
-    end
-end
-
-local function post(path, payload)
-    local req = getRequest()
-
-    if not req then
-        return {
-            ok = false,
-            reason = "norequest",
-            message = "Your executor does not support HTTP requests."
-        }
-    end
-
-    local ok, response = pcall(function()
-        return req({
-            Url = API .. path,
-            Method = "POST",
-            Headers = {
-                ["Content-Type"] = "application/json"
-            },
-            Body = HttpService:JSONEncode(payload)
-        })
-    end)
-
-    if not ok or type(response) ~= "table" then
-        return {
-            ok = false,
-            reason = "net",
-            message = "Could not connect to Orbis Auth. Check your connection."
-        }
-    end
-
-    local status = response.StatusCode
-        or response.Status_Code
-        or response.status_code
-
-    local body = response.Body or response.body
-
-    if type(body) ~= "string" then
-        return {
-            ok = false,
-            reason = "net",
-            message = "The authentication server returned an invalid response."
-        }
-    end
-
-    local decodedOk, result = pcall(function()
-        return HttpService:JSONDecode(body)
-    end)
-
-    if not decodedOk or type(result) ~= "table" then
-        return {
-            ok = false,
-            reason = "net",
-            message = "Could not read the authentication server response."
-        }
-    end
-
-    if type(status) == "number"
-        and status >= 500 then
-        result.ok = false
-        result.reason = result.reason or "server_error"
-        result.message = result.message or "Orbis Auth is temporarily unavailable."
-    end
-
-    if not result.ok then
-        result.message = result.message or "Authentication failed."
-    end
-
-    return result
-end
-
--- First login: exchange 4-digit code for session token
-function Client.verify(code, uid)
-    uid = tostring(uid or "")
-    code = tostring(code or "")
-
-    if not uid:match("^%d+$") then
-        return {
-            ok = false,
-            reason = "bad_request",
-            message = "Invalid Roblox user ID."
-        }
-    end
-
-    if not code:match("^%d%d%d%d$") then
-        return {
-            ok = false,
-            reason = "invalid",
-            message = "Enter exactly 4 digits."
-        }
-    end
-
-    local result = post("/verify", {
-        uid = uid,
-        code = code
-    })
-
-    if result.ok then
-        local token = result.token
-
-        if type(token) ~= "string"
-            or #token ~= 64
-            or not token:match("^[0-9a-f]+$") then
-            return {
-                ok = false,
-                reason = "server_error",
-                message = "The server returned an invalid session token."
-            }
         end
-
-        saveToken(uid, token)
     end
-
-    return result
+    return nil
+end
+function M.save(uid, token, exp)
+    uid = tostring(uid)
+    local rec = { token = token, exp = tonumber(exp) }
+    mem[uid] = rec
+    local all = readAll()
+    all[uid] = rec
+    writeAll(all)
+end
+function M.clear(uid)
+    uid = tostring(uid)
+    mem[uid] = nil
+    local all = readAll()
+    all[uid] = nil
+    writeAll(all)
 end
 
--- Load locally saved session
-function Client.load(uid)
-    return readToken(uid) ~= nil
+-- ---------- HTTP (POST only: the Worker no longer accepts GET) ----------
+local function requestFn()
+    return (syn and syn.request) or http_request or request or (http and http.request) or (fluxus and fluxus.request)
 end
 
--- Validate saved session with POST /session
-function Client.resume(uid)
-    uid = tostring(uid or "")
-
-    local token = readToken(uid)
-
-    if not token then
-        return {
-            ok = false,
-            reason = "none",
-            message = ""
-        }
-    end
-
-    local result = post("/session", {
-        uid = uid,
-        token = token
+-- returns the decoded JSON table, or nil + "net" / "norequest"
+local function post(path, payload)
+    local fn = requestFn()
+    if type(fn) ~= "function" then return nil, "norequest" end
+    local ok, res = pcall(fn, {
+        Url = M.WORKER .. path,
+        Method = "POST",
+        Headers = { ["Content-Type"] = "application/json" },
+        Body = HttpService:JSONEncode(payload),
     })
+    if not ok or type(res) ~= "table" then return nil, "net" end
+    local body = res.Body or res.body
+    local okj, data = pcall(function() return HttpService:JSONDecode(tostring(body or "")) end)
+    if not okj or type(data) ~= "table" then return nil, "net" end -- e.g. an HTML error page
+    return data
+end
 
-    if result.reason == "session_invalid" then
-        clearToken(uid)
+local function failure(data)
+    local reason = tostring(data.reason or "server_error")
+    return {
+        ok = false,
+        reason = reason,
+        message = tostring(data.message or TEXT[reason] or TEXT.server_error),
+        retry = tonumber(data.retry),
+    }
+end
+local function netFailure(kind)
+    return { ok = false, reason = kind, message = TEXT[kind] or TEXT.net }
+end
+
+-- ---------- first login ----------
+function M.verify(code, uid)
+    code = tostring(code or "")
+    if #code ~= M.CODE_LEN or not code:match("^%d+$") then
+        return { ok = false, reason = "invalid", message = "Enter the " .. M.CODE_LEN .. "-digit passcode." }
     end
-
-    return result
+    local data, kind = post("/verify", { uid = tostring(uid), code = code })
+    if not data then return netFailure(kind) end
+    if data.ok == true and type(data.token) == "string" then
+        M.save(uid, data.token, data.exp)
+        return { ok = true, exp = tonumber(data.exp) }
+    end
+    return failure(data)
 end
 
--- Delete saved session
-function Client.clear(uid)
-    clearToken(uid)
+-- ---------- later launches ----------
+function M.resume(uid)
+    local s = M.load(uid)
+    if not s then return { ok = false, reason = "none", message = "" } end
+    local data, kind = post("/session", { uid = tostring(uid), token = s.token })
+    if not data then return netFailure(kind) end -- network trouble: keep the session, let the user retry
+    if data.ok == true then
+        if data.exp then M.save(uid, s.token, data.exp) end
+        return { ok = true, exp = tonumber(data.exp) }
+    end
+    if tostring(data.reason) == "session_invalid" then M.clear(uid) end -- expired: forget it, ask for a new passcode
+    return failure(data)
 end
 
-return Client
+-- ---------- signed-in calls (presence, friends, owner list) ----------
+-- Sends {uid, token, ...extra} to `path`. Returns the server's JSON table on success (ok = true plus its fields),
+-- or { ok = false, reason, message, retry } on failure. An expired session is forgotten automatically.
+function M.api(uid, path, extra)
+    local s = M.load(uid)
+    if not s then return { ok = false, reason = "session_invalid", message = TEXT.session_invalid } end
+    local body = { uid = tostring(uid), token = s.token }
+    for k, v in pairs(extra or {}) do body[k] = v end
+    local data, kind = post(path, body)
+    if not data then return netFailure(kind) end
+    if data.ok == true then return data end
+    if tostring(data.reason) == "session_invalid" then M.clear(uid) end
+    return failure(data)
+end
+
+return M

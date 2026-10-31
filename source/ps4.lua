@@ -148,7 +148,7 @@ end
 -- ===== PlayStation-style icons, drawn from simple shapes (no image files needed) =====
 S.iconDraw = {}
 local D = S.iconDraw
-D.cross = function(px, bar) bar(0.5, 0.5, 0.8, 45); bar(0.5, 0.5, 0.8, -45) end
+D.cross = function(px, bar) bar(0.5, 0.5, 1.1, 45); bar(0.5, 0.5, 1.1, -45) end -- 1.1 = same width as the circle
 D.circle = function(px) px(0.5, 0.5, 0.8, 0.8, { r = 0.5 }) end
 D.square = function(px) px(0.5, 0.5, 0.7, 0.7, { r = 0.08 }) end
 D.triangle = function(px, bar) bar(0.3, 0.5, 0.8, -60); bar(0.7, 0.5, 0.8, 60); bar(0.5, 0.84, 0.8, 0) end
@@ -212,6 +212,11 @@ D.info = function(px, bar, dot)
     px(0.5, 0.5, 0.82, 0.82, { r = 0.5 }); dot(0.5, 0.3, 0.1); bar(0.5, 0.6, 0.3, 90)
 end
 D.copy = function(px) px(0.38, 0.38, 0.46, 0.46, { r = 0.1 }); px(0.6, 0.6, 0.46, 0.46, { r = 0.1 }) end
+D.crown = function(px, bar, dot)
+    px(0.5, 0.78, 0.74, 0.14, { fill = true, r = 0.2 })
+    px(0.24, 0.5, 0.14, 0.34, { fill = true }); px(0.5, 0.4, 0.14, 0.5, { fill = true }); px(0.76, 0.5, 0.14, 0.34, { fill = true })
+    dot(0.24, 0.3, 0.14); dot(0.5, 0.18, 0.14); dot(0.76, 0.3, 0.14)
+end
 D.check = function(px, bar) bar(0.36, 0.62, 0.32, 45); bar(0.6, 0.5, 0.62, -50) end
 D.store = function(px) px(0.5, 0.62, 0.66, 0.5, { r = 0.1 }); px(0.5, 0.3, 0.28, 0.28, { r = 0.5 }) end
 D.library = function(px)
@@ -758,6 +763,22 @@ for i = 1, 4 do
     ):Play()
 end
 
+-- floating bokeh dots, like the PS4 home background (slow drift, very soft)
+for i = 1, 16 do
+    local d = 6 + (i * 5) % 16
+    local x, y = ((i * 137) % 100) / 100, ((i * 61) % 100) / 100
+    local dot = make("Frame", {
+        Size = UDim2.fromOffset(d, d), AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(x, y),
+        BackgroundColor3 = COLORS.white, BackgroundTransparency = 0.82 + (i % 4) * 0.04,
+        BorderSizePixel = 0, ZIndex = 0,
+    }, S.bg)
+    circle(dot)
+    TweenService:Create(dot,
+        TweenInfo.new(9 + (i % 6) * 2.2, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true),
+        { Position = UDim2.fromScale(x + ((i % 2 == 0) and 0.04 or -0.04), y - 0.07) }
+    ):Play()
+end
+
 -- PS4 notification icon: blue square, full toast height, flush left, white symbols in a 2x2 grid
 function S.toastIcon(toast)
     local box = make("Frame", {
@@ -786,7 +807,7 @@ local currentPage = nil
 local panelOpen = false
 
 -- ===== Support link, PS4-style popups (loading + error) and the safety scan =====
-S.DISCORD = "https://discord.gg/gfdjcFDVjf"
+S.DISCORD = "https://discord.gg/9aefrXgRjf"
 
 function S.popupBase(w, h)
     local old = main:FindFirstChild("PS4Popup")
@@ -1168,6 +1189,24 @@ local function makePage(name, title)
     return page
 end
 
+-- PS4 footer for list pages: thin line above the hints, user at the bottom right
+S.footerNames = {}
+function S.addPageFooter(name)
+    local d = pages[name]
+    if not d or d.footer then return end
+    d.footer = true
+    local page = d.frame
+    make("Frame", {
+        Size = UDim2.new(1, -80, 0, 1), Position = UDim2.fromOffset(40, H - 57),
+        BackgroundColor3 = COLORS.white, BackgroundTransparency = 0.85, BorderSizePixel = 0,
+    }, page)
+    S.avatarCircle(page, player.UserId, W - 200, H - 42, 18)
+    local nm = label(page, S.profile and S.profile.name or player.DisplayName, UDim2.fromOffset(140, 30), UDim2.fromOffset(W - 176, H - 48), 13, COLORS.white)
+    nm.TextWrapped = false
+    nm.TextTruncate = Enum.TextTruncate.AtEnd
+    S.footerNames[#S.footerNames + 1] = nm
+end
+
 function S.hidePage(page)
     local t = tween(page, 0.18, { GroupTransparency = 1 })
     t.Completed:Connect(function()
@@ -1202,6 +1241,7 @@ function S.goHome()
 end
 
 function S.goBack()
+    if S.detailOpen and S.closeDetail then S.closeDetail() return end
     local cur = currentPage
     if not cur then return end
     local target = S.backTarget[cur]
@@ -1223,7 +1263,6 @@ local messagesPage = makePage("Messages", "Messages")
 S.notifPage = makePage("Notifications", "Notifications")
 S.trophyPage = makePage("Trophies", "Trophies")
 local editorPage = makePage("Editor", "Code Editor")
-local ownerPage = makePage("Owner", "Owner Panel")
 S.slPage = makePage("SettingsList", "")
 S.browserPage = makePage("Browser", "Internet Browser")
 
@@ -1338,91 +1377,6 @@ local function rowButton(row, fn)
     return b
 end
 
-local ownerSearch, ownerScroll
-local ownerAccountsCache = {}
-
-function S.refreshOwnerAccounts()
-    clearList(ownerScroll)
-    local query = tostring(ownerSearch.Text or ""):lower():gsub("^@", "")
-    local shown = 0
-    for i, account in ipairs(ownerAccountsCache) do
-        local uid = tostring(account.uid or "")
-        local username = account.username or uid
-        if query == "" or username:lower():find(query, 1, true) or uid:find(query, 1, true) then
-            shown += 1
-            local row = listRow(ownerScroll, shown, 58)
-            if uid ~= "8407673016" then rowButton(row, function()
-                local action = account.premium and "Revoke Premium" or "Grant Premium"
-                openPanel(action .. "?", {
-                    { action, function()
-                        task.spawn(function()
-                            local result = S.orbis.setPremium(player.UserId, uid, not account.premium)
-                            if result and result.ok then
-                                notify((result.premium and "Premium granted to " or "Premium revoked for ") .. username)
-                                S.openOwnerPanel()
-                            else
-                                S.showDialog(result and result.message or "Could not update Premium.")
-                            end
-                        end)
-                    end },
-                    { "Cancel" },
-                })
-            end) end
-            rowText(row, "@" .. username, UDim2.fromOffset(14, 6), UDim2.new(1, -170, 0, 22), 13, COLORS.white, true)
-            rowText(row, "User ID: " .. uid .. "  •  " .. (account.premium and "PREMIUM" or "Standard"), UDim2.fromOffset(14, 30), UDim2.new(1, -170, 0, 18), 11, account.premium and Color3.fromRGB(255, 205, 80) or COLORS.muted)
-            label(row, uid == "8407673016" and "OWNER" or (account.premium and "REVOKE" or "GRANT"), UDim2.new(0, 90, 1, 0), UDim2.new(1, -100, 0, 0), 11, uid == "8407673016" and Color3.fromRGB(255, 205, 80) or (account.premium and Color3.fromRGB(255, 150, 150) or Color3.fromRGB(120, 220, 160)), true)
-        end
-    end
-    if shown == 0 then
-        local empty = label(ownerScroll, "No matching accounts found.", UDim2.new(1, -12, 0, 30), UDim2.new(), 13, COLORS.muted)
-        empty.LayoutOrder = 1
-    end
-end
-
-function S.showOwnerLogs()
-    if not S.isOwner then notify("Owner access required"); return end
-    task.spawn(function()
-        local result = S.orbis and S.orbis.ownerLogs(player.UserId)
-        if not result or not result.ok then
-            S.showDialog(result and result.message or "Could not load Owner action logs.")
-            return
-        end
-        local lines = {}
-        for _, entry in ipairs(result.logs or {}) do
-            local when = os.date("%Y-%m-%d %H:%M:%S", tonumber(entry.at) or 0)
-            table.insert(lines, when .. "  |  " .. tostring(entry.action) .. "  |  User ID: " .. tostring(entry.targetUid))
-        end
-        showInfo("Owner Action Logs", #lines > 0 and table.concat(lines, "\n") or "No Owner actions recorded yet.")
-    end)
-end
-
-function S.openOwnerPanel()
-    if not S.isOwner then notify("Owner access required"); return end
-    unlockTrophy("owner_visit")
-    notify("Owner access verified")
-    showPage("Owner")
-    clearList(ownerScroll)
-    local loading = label(ownerScroll, "Loading registered accounts...", UDim2.new(1, -12, 0, 30), UDim2.new(), 13, COLORS.muted)
-    loading.LayoutOrder = 1
-    task.spawn(function()
-        if S.orbis and S.orbis.ownerVisit then S.orbis.ownerVisit(player.UserId) end
-        local result = S.orbis and S.orbis.ownerAccounts(player.UserId)
-        if not ownerPage.Visible then return end
-        if not result or not result.ok then
-            loading.Text = result and result.message or "Could not load Owner accounts."
-            return
-        end
-        ownerAccountsCache = result.accounts or {}
-        for _, account in ipairs(ownerAccountsCache) do
-            local ok, username = pcall(function() return Players:GetNameFromUserIdAsync(tonumber(account.uid)) end)
-            account.username = ok and username or ("User " .. tostring(account.uid))
-        end
-        if loading.Parent then loading:Destroy() end
-        S.refreshOwnerAccounts()
-    end)
-end
-
-
 function S.openPlayerOptions(userId, username, display)
     openPanel(shortText(display, 22), {
         { "Copy Username", function() copyText(username, "Username") end },
@@ -1455,17 +1409,6 @@ S.partyScroll = makeListScroll(S.partyPage)
 local notifScroll = makeListScroll(S.notifPage)
 S.trophyScroll = makeListScroll(S.trophyPage)
 local msgScroll = makeListScroll(messagesPage, 84, 272)
-ownerSearch = make("TextBox", {
-    Size = UDim2.new(1, -80, 0, 30), Position = UDim2.fromOffset(40, 78),
-    BackgroundColor3 = COLORS.card, BackgroundTransparency = 0.25, BorderSizePixel = 0,
-    Text = "", PlaceholderText = "Search by Roblox @username or User ID", PlaceholderColor3 = COLORS.muted,
-    TextColor3 = COLORS.white, Font = Enum.Font.Gotham, TextSize = 13,
-    TextXAlignment = Enum.TextXAlignment.Left, ClearTextOnFocus = false,
-}, ownerPage)
-round(ownerSearch, 5)
-make("UIPadding", { PaddingLeft = UDim.new(0, 10) }, ownerSearch)
-ownerSearch.FocusLost:Connect(function() S.refreshOwnerAccounts() end)
-ownerScroll = makeListScroll(ownerPage, 118, H - 188)
 
 local TROPHIES = {
     { id = "first_dl", name = "First Download", desc = "Download your first script", grade = "Bronze" },
@@ -1478,7 +1421,6 @@ local TROPHIES = {
     { id = "themer", name = "Interior Designer", desc = "Change the theme", grade = "Silver" },
     { id = "coder", name = "Developer", desc = "Save your own script", grade = "Silver" },
     { id = "full", name = "Collector", desc = "Fill all library slots", grade = "Gold" },
-    { id = "owner_visit", name = "Owner Visited", desc = "Open the verified Owner Panel", grade = "Gold" },
     { id = "platinum", name = "Platinum", desc = "Earn every other trophy", grade = "Platinum" },
 }
 
@@ -1502,7 +1444,7 @@ unlockTrophy = function(id)
     if id ~= "platinum" then
         local all = true
         for _, t in ipairs(TROPHIES) do
-            if t.id ~= "platinum" and t.id ~= "owner_visit" and not earned[t.id] then all = false break end
+            if t.id ~= "platinum" and not earned[t.id] then all = false break end
         end
         if all then task.delay(3, function() unlockTrophy("platinum") end) end
     end
@@ -1539,6 +1481,8 @@ end
 
 function S.refreshFriends()
     unlockTrophy("social")
+    S.paintFriendTabs()
+    if S.friendsTab == "script" then S.refreshScriptFriends() return end
     clearList(friendsScroll)
     local status = label(friendsScroll, "Loading friends...", UDim2.new(1, -12, 0, 30), UDim2.new(), 14, COLORS.muted)
     status.LayoutOrder = 0
@@ -1583,6 +1527,147 @@ function S.refreshFriends()
         end
     end)
 end
+
+
+-- ===== Script friends: people who use this dashboard (needs the Orbis login) =====
+S.friendsTab = "roblox"
+S.fTabBtns = {}
+
+function S.fTab(text, x, w, id, fn)
+    local b = button(S.friendsPage, text, UDim2.fromOffset(w, 28), UDim2.fromOffset(x, 26), COLORS.card, 12)
+    S.fTabBtns[id] = b
+    b.Activated:Connect(function() playSound("Select"); fn() end)
+    return b
+end
+function S.paintFriendTabs()
+    for id, b in pairs(S.fTabBtns) do
+        if id == "add" then b.Visible = S.friendsTab == "script"
+        else b.BackgroundColor3 = (S.friendsTab == id) and COLORS.blue or COLORS.card end
+    end
+end
+
+function S.agoText(ago)
+    if ago < 150 then return "Online" end
+    if ago < 3600 then return "Seen " .. math.floor(ago / 60) .. " min ago" end
+    if ago < 86400 then return "Seen " .. math.floor(ago / 3600) .. " h ago" end
+    return "Seen " .. math.floor(ago / 86400) .. " d ago"
+end
+function S.statusDot(row, online, text)
+    local dot = make("Frame", {
+        Size = UDim2.fromOffset(10, 10), Position = UDim2.new(1, -118, 0.5, -5),
+        BackgroundColor3 = online and Color3.fromRGB(60, 200, 110) or COLORS.grey, BorderSizePixel = 0,
+    }, row)
+    circle(dot)
+    local l = label(row, text, UDim2.fromOffset(102, 20), UDim2.new(1, -104, 0.5, -10), 11, online and COLORS.white or COLORS.muted)
+    l.TextWrapped = false
+    l.TextTruncate = Enum.TextTruncate.AtEnd
+end
+
+function S.refreshScriptFriends()
+    clearList(friendsScroll)
+    local function note(text)
+        local l = label(friendsScroll, text, UDim2.new(1, -12, 0, 30), UDim2.new(), 13, COLORS.muted)
+        l.LayoutOrder = 0
+        return l
+    end
+    if not S.orbis then note("Script friends need the Orbis login.") return end
+    local status = note("Loading script friends...")
+    task.spawn(function()
+        local r = S.orbis.api(player.UserId, "/presence", {})
+        if not status.Parent then return end
+        if not r.ok then status.Text = r.message or "Could not load script friends." return end
+        S.applyPresence(r)
+        status:Destroy()
+        local order = 0
+        local function nextOrder() order += 1 return order end
+        local function header(text)
+            local h = label(friendsScroll, text, UDim2.new(1, -12, 0, 22), UDim2.new(), 12, COLORS.muted, true)
+            h.LayoutOrder = nextOrder()
+        end
+        if #r.incoming > 0 then
+            header("Friend requests (" .. #r.incoming .. ")")
+            for _, q in ipairs(r.incoming) do
+                local row = listRow(friendsScroll, nextOrder(), 54)
+                S.avatarCircle(row, tonumber(q.uid) or 1, 10, 7, 40)
+                rowText(row, q.display, UDim2.fromOffset(62, 8), UDim2.new(1, -260, 0, 20), 14, COLORS.white, true)
+                rowText(row, "@" .. q.name, UDim2.fromOffset(62, 29), UDim2.new(1, -260, 0, 16), 11, COLORS.muted)
+                local acc = button(row, "Accept", UDim2.fromOffset(78, 28), UDim2.new(1, -176, 0.5, -14), COLORS.blue, 12)
+                local dec = button(row, "Decline", UDim2.fromOffset(78, 28), UDim2.new(1, -92, 0.5, -14), COLORS.card, 12)
+                acc.Activated:Connect(function() playSound("Select"); S.friendRespond(q.uid, true) end)
+                dec.Activated:Connect(function() playSound("Select"); S.friendRespond(q.uid, false) end)
+            end
+        end
+        header("Script friends (" .. #r.friends .. ")")
+        if #r.friends == 0 then
+            local l = label(friendsScroll, "No script friends yet. Tap + Add to find people who use this dashboard.",
+                UDim2.new(1, -12, 0, 30), UDim2.new(), 13, COLORS.muted)
+            l.LayoutOrder = nextOrder()
+        end
+        for _, f in ipairs(r.friends) do
+            local row = listRow(friendsScroll, nextOrder(), 54)
+            S.avatarCircle(row, tonumber(f.uid) or 1, 10, 7, 40)
+            rowButton(row, function()
+                openPanel(shortText(f.display, 22), {
+                    { "Copy Username", function() copyText(f.name, "Username") end },
+                    { "Copy User ID", function() copyText(tostring(f.uid), "User ID") end },
+                    { "Remove Friend", function() S.friendRemove(f.uid) end },
+                    { "Cancel" },
+                })
+            end)
+            rowText(row, f.display, UDim2.fromOffset(62, 8), UDim2.new(1, -200, 0, 20), 14, COLORS.white, true)
+            rowText(row, "@" .. f.name, UDim2.fromOffset(62, 29), UDim2.new(1, -200, 0, 16), 11, COLORS.muted)
+            S.statusDot(row, f.online, S.agoText(f.ago))
+        end
+    end)
+end
+
+function S.friendCall(path, extra, okText)
+    task.spawn(function()
+        local r = S.orbis and S.orbis.api(player.UserId, path, extra) or { ok = false, message = "Not signed in." }
+        notify(r.ok and (type(okText) == "function" and okText(r) or okText) or (r.message or "Something went wrong."))
+        if currentPage == "Friends" then S.refreshFriends() end
+    end)
+end
+function S.friendRequest(uid)
+    S.friendCall("/friends/request", { to = tostring(uid) }, function(r) return r.state == "friend" and "You are now friends" or "Friend request sent" end)
+end
+function S.friendRespond(uid, accept)
+    S.friendCall("/friends/respond", { from = tostring(uid), accept = accept }, accept and "Friend added" or "Request declined")
+end
+function S.friendRemove(uid)
+    S.friendCall("/friends/remove", { other = tostring(uid) }, "Friend removed")
+end
+
+function S.addFriendFlow()
+    S.openKeyboard("Find script users", "", {
+        hint = "Type at least 2 letters of a name, then press Done.",
+        onDone = function(text)
+            text = (text:gsub("^%s+", "")):gsub("%s+$", "")
+            if #text < 2 then notify("Type at least 2 letters") return end
+            task.spawn(function()
+                local r = S.orbis and S.orbis.api(player.UserId, "/friends/search", { q = text })
+                if not r or not r.ok then notify(r and r.message or "Not signed in.") return end
+                if #r.users == 0 then notify("No script users found") return end
+                local entries = {}
+                for i, u in ipairs(r.users) do
+                    if i > 8 then break end
+                    local tag = u.state == "friend" and " (friend)" or (u.state == "sent" and " (requested)" or "")
+                    entries[#entries + 1] = { shortText(u.display, 18) .. tag, function()
+                        if u.state == "none" or u.state == "incoming" then S.friendRequest(u.uid)
+                        else notify(u.state == "friend" and "Already friends" or "Already requested") end
+                    end }
+                end
+                entries[#entries + 1] = { "Cancel" }
+                openPanel("Add friend", entries)
+            end)
+        end,
+    })
+end
+
+S.fTab("Roblox", W - 370, 100, "roblox", function() S.friendsTab = "roblox"; S.refreshFriends() end)
+S.fTab("Script Friends", W - 264, 130, "script", function() S.friendsTab = "script"; S.refreshFriends() end)
+S.fTab("+ Add", W - 128, 88, "add", function() S.addFriendFlow() end)
+S.paintFriendTabs()
 
 local function refreshParty()
     clearList(S.partyScroll)
@@ -2265,7 +2350,14 @@ function S.brBuildUI()
     }, urlF)
     S.brLock = S.icon("lock", urlF, 16, COLORS.white, UDim2.new(1, -28, 0, 9))
     S.brLock.Visible = false
-    S.urlBox.Focused:Connect(function() urlS.Transparency = 0 end)
+    S.urlBox.Focused:Connect(function()
+        urlS.Transparency = 0
+        task.defer(function() S.urlBox:ReleaseFocus() end)
+        S.openKeyboard("Enter URL", S.urlBox.Text, {
+            maxLen = 300, hint = "Press Done to open the page.",
+            onDone = function(t) S.urlBox.Text = t; S.brInput(t) end,
+        })
+    end)
     S.urlBox.FocusLost:Connect(function(enter)
         urlS.Transparency = 0.55
         if enter then S.brInput(S.urlBox.Text) end
@@ -2286,7 +2378,14 @@ function S.brBuildUI()
     }, seaF)
     S.icon("triangle", tri, 16, COLORS.muted, UDim2.fromOffset(6, 6))
     tri.Activated:Connect(function() playSound("Select"); S.brSearch(S.searchBox.Text) end)
-    S.searchBox.Focused:Connect(function() seaS.Transparency = 0 end)
+    S.searchBox.Focused:Connect(function()
+        seaS.Transparency = 0
+        task.defer(function() S.searchBox:ReleaseFocus() end)
+        S.openKeyboard("Search the web", S.searchBox.Text, {
+            maxLen = 120, hint = "Press Done to search.",
+            onDone = function(t) S.searchBox.Text = t; S.brSearch(t) end,
+        })
+    end)
     S.searchBox.FocusLost:Connect(function(enter)
         seaS.Transparency = 0.55
         if enter then S.brSearch(S.searchBox.Text) end
@@ -2456,50 +2555,54 @@ hintLabel.TextXAlignment = Enum.TextXAlignment.Center
 hintLabel.Visible = false
 
 S.functionItems = {
-    { "♙", "Friends" }, { "◉", "Party" }, { "✉", "Messages" },
-    { "♧", "Notifications" }, { "★", "Trophies" }, { "⚙", "Settings" }, { "⏻", "Power" },
+    { "Store", "store" }, { "What's New", "info" }, { "Friends", "friends" }, { "Messages", "messages" },
+    { "Party", "party" }, { "Notifications", "bell" }, { "Trophies", "trophy" }, { "Settings", "gear" },
+    { "Power", "power" }, { "Owner", "crown", owner = true },
 }
+S.fnIcons = {}
 
 for index, item in ipairs(S.functionItems) do
-    local x = 24 + (index - 1) * 38
+    local x = 24 + (index - 1) * 33
     local icon = make("TextButton", {
-        Size = UDim2.fromOffset(32, 32),
-        Position = UDim2.fromOffset(x, 22),
+        Size = UDim2.fromOffset(30, 30),
+        Position = UDim2.fromOffset(x, 23),
         BackgroundColor3 = COLORS.white,
         BackgroundTransparency = 1,
         BorderSizePixel = 0, AutoButtonColor = false,
-        Text = "", Font = Enum.Font.GothamMedium,
-        TextSize = 22, TextColor3 = COLORS.white,
+        Text = "", Visible = not item.owner,
     }, S.fb)
     circle(icon)
-    S.icon(({ Friends = "friends", Party = "party", Messages = "messages", Notifications = "bell",
-        Trophies = "trophy", Settings = "gear", Power = "power" })[item[2]], icon, 20, COLORS.white, UDim2.fromOffset(6, 6))
+    S.fnIcons[item[1]] = icon
+    S.icon(item[2], icon, 19, COLORS.white, UDim2.fromOffset(5.5, 5.5))
     local ring = stroke(icon, COLORS.white, 2, 1)
     local function showHint()
         icon.BackgroundTransparency = 0.88
         ring.Transparency = 0.15
-        hintLabel.Text = item[2]
-        hintLabel.Position = UDim2.fromOffset(x + 16 - 55, 58)
+        hintLabel.Text = item[1]
+        hintLabel.Position = UDim2.fromOffset(x + 15 - 55, 58)
         hintLabel.Visible = true
     end
     icon.MouseEnter:Connect(showHint)
     icon.MouseLeave:Connect(function()
         icon.BackgroundTransparency = 1
         ring.Transparency = 1
-        if hintLabel.Text == item[2] then hintLabel.Visible = false end
+        if hintLabel.Text == item[1] then hintLabel.Visible = false end
     end)
     icon.Activated:Connect(function()
         playSound("Select")
         showHint()
-        task.delay(1.5, function() if hintLabel.Text == item[2] then hintLabel.Visible = false end end)
-        local name = item[2]
+        task.delay(1.5, function() if hintLabel.Text == item[1] then hintLabel.Visible = false end end)
+        local name = item[1]
         if name == "Settings" then showPage("Settings")
         elseif name == "Power" then S.openPowerPanel()
+        elseif name == "Store" then openStore()
+        elseif name == "What's New" then S.openNews()
         elseif name == "Friends" then S.refreshFriends(); showPage("Friends")
         elseif name == "Party" then refreshParty(); showPage("Party")
         elseif name == "Messages" then S.refreshMessages(); showPage("Messages")
         elseif name == "Notifications" then refreshNotifications(); showPage("Notifications")
-        elseif name == "Trophies" then S.refreshTrophies(); showPage("Trophies") end
+        elseif name == "Trophies" then S.refreshTrophies(); showPage("Trophies")
+        elseif name == "Owner" then S.openOwnerPanel() end
     end)
 end
 
@@ -2519,7 +2622,7 @@ end)
 
 local avatar = make("ImageButton", {
     Size = UDim2.fromOffset(26, 26),
-    Position = UDim2.fromOffset(346, 25),
+    Position = UDim2.fromOffset(358, 25),
     BackgroundColor3 = COLORS.card,
     BorderSizePixel = 0, Image = "", ZIndex = 5,
 }, main)
@@ -2596,8 +2699,8 @@ end)
 
 -- name + PS Plus icon next to the avatar, trophy level at the right (like the PS4)
 S.nameHolder = make("Frame", {
-    Size = UDim2.fromOffset(150, 26),
-    Position = UDim2.fromOffset(380, 25),
+    Size = UDim2.fromOffset(140, 26),
+    Position = UDim2.fromOffset(392, 25),
     BackgroundTransparency = 1, ZIndex = 5,
 }, main)
 make("UIListLayout", {
@@ -3133,10 +3236,11 @@ function S.drawStoreTile(tile)
     }, hold)
     round(body, 3)
     local c = COLORS.white
-    S.icon("square", body, 12, c, UDim2.fromOffset(11, 8))
-    S.icon("triangle", body, 12, c, UDim2.fromOffset(29, 8))
-    S.icon("cross", body, 12, c, UDim2.fromOffset(11, 24))
-    S.icon("circle", body, 12, c, UDim2.fromOffset(29, 24))
+    -- bag body is 52 x 42; the 2x2 grid is 14px symbols + 6px gap = 34 x 34 -> margins 9 left/right, 4 top/bottom
+    S.icon("square", body, 14, c, UDim2.fromOffset(9, 4))
+    S.icon("triangle", body, 14, c, UDim2.fromOffset(29, 4))
+    S.icon("cross", body, 14, c, UDim2.fromOffset(9, 24))
+    S.icon("circle", body, 14, c, UDim2.fromOffset(29, 24))
     local cap = label(tile, "PlayStation Store", UDim2.new(1, 0, 0, 14), UDim2.new(0, 0, 1, -18), 9, COLORS.white)
     cap.TextXAlignment = Enum.TextXAlignment.Center
     cap.TextWrapped = false
@@ -3298,7 +3402,7 @@ end
 
 function S.buildKeyboard()
     if S.kb then return S.kb end
-    local kb = { value = "", shift = false, sym = false, open = false, blink = true, token = 0 }
+    local kb = { value = "", shift = false, sym = false, open = false, blink = true, token = 0, maxLen = 60 }
     S.kb = kb
     kb.root = make("CanvasGroup", {
         Name = "PS4Keyboard", Size = UDim2.fromScale(1, 1),
@@ -3340,6 +3444,20 @@ function S.buildKeyboard()
         TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd,
     }, field)
     kb.title = label(kb.root, "", UDim2.fromOffset(300, 22), UDim2.fromOffset(40, 8), 12, COLORS.muted)
+    -- invisible TextBox: the "Phone Keyboard" button focuses it so the phone's own keyboard comes up
+    kb.box = make("TextBox", {
+        Size = UDim2.fromOffset(2, 2), Position = UDim2.fromOffset(0, 0), BackgroundTransparency = 1,
+        TextTransparency = 1, Text = "", ClearTextOnFocus = false,
+    }, kb.root)
+    kb.box:GetPropertyChangedSignal("Text"):Connect(function()
+        if kb.open and kb.box:IsFocused() then
+            kb.value = (kb.box.Text:gsub("[\r\n]", "")):sub(1, kb.maxLen)
+            kb.changed()
+        end
+    end)
+    kb.box.FocusLost:Connect(function(enter)
+        if enter and kb.open then kb.close(true) end
+    end)
     make("Frame", {
         Size = UDim2.fromOffset(427, 20), Position = UDim2.fromOffset(40, 76),
         BackgroundColor3 = Color3.fromRGB(0, 40, 120), BackgroundTransparency = 0.55, BorderSizePixel = 0,
@@ -3393,11 +3511,18 @@ function S.buildKeyboard()
     make("UIListLayout", {
         FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 3), SortOrder = Enum.SortOrder.LayoutOrder,
     }, row6)
-    local cancel = S.kbKey(row6, 210, "Cancel", 1)
-    S.icon("circle", cancel, 16, COLORS.muted, UDim2.fromOffset(14, 10))
-    local done = S.kbKey(row6, 214, "Done", 2, Color3.fromRGB(0, 112, 209))
-    S.icon("cross", done, 16, COLORS.white, UDim2.fromOffset(14, 10))
+    local cancel = S.kbKey(row6, 140, "Cancel", 1)
+    S.icon("circle", cancel, 16, COLORS.muted, UDim2.fromOffset(10, 10))
+    local phone = S.kbKey(row6, 140, "Phone Keyboard", 2)
+    phone.TextSize = 12
+    local done = S.kbKey(row6, 141, "Done", 3, Color3.fromRGB(0, 112, 209))
+    S.icon("cross", done, 16, COLORS.white, UDim2.fromOffset(10, 10))
     cancel.Activated:Connect(function() kb.close(false) end)
+    phone.Activated:Connect(function()
+        playSound("Select")
+        kb.box.Text = kb.value
+        kb.box:CaptureFocus()
+    end)
     done.Activated:Connect(function() kb.close(true) end)
 
     -- results panel (right)
@@ -3443,7 +3568,7 @@ function S.buildKeyboard()
         kb.refreshResults()
     end
     function kb.insert(ch)
-        if #kb.value >= 60 then return end
+        if #kb.value >= kb.maxLen then return end
         kb.value = kb.value .. ch
         kb.changed()
     end
@@ -3467,6 +3592,7 @@ function S.buildKeyboard()
         if not kb.open then return end
         kb.open = false
         S.kbOpen = false
+        if kb.box then kb.box:ReleaseFocus() end
         if kb.conn then kb.conn:Disconnect(); kb.conn = nil end
         tween(kb.root, 0.15, { GroupTransparency = 1 })
         task.delay(0.17, function()
@@ -3488,6 +3614,8 @@ function S.openKeyboard(title, initial, opts)
     kb.resultsFn = opts.results
     kb.hintText = opts.hint
     kb.title.Text = title or ""
+    kb.maxLen = opts.maxLen or 60
+    kb.box.Text = kb.value
     kb.shift, kb.sym = false, false
     kb.layout()
     kb.changed()
@@ -3499,7 +3627,7 @@ function S.openKeyboard(title, initial, opts)
     playSound("Open")
     -- a real keyboard works too
     kb.conn = UserInputService.InputBegan:Connect(function(input)
-        if not kb.open or input.UserInputType ~= Enum.UserInputType.Keyboard then return end
+        if not kb.open or kb.box:IsFocused() or input.UserInputType ~= Enum.UserInputType.Keyboard then return end
         local name = input.KeyCode.Name
         if name == "Backspace" then kb.backspace()
         elseif name == "Return" or name == "KeypadEnter" then kb.close(true)
@@ -3682,6 +3810,9 @@ S.libUser = make("Frame", {
 make("UIListLayout", {
     FillDirection = Enum.FillDirection.Horizontal, VerticalAlignment = Enum.VerticalAlignment.Center, Padding = UDim.new(0, 5),
 }, S.libUser)
+for _, pn in ipairs({ "Settings", "SettingsList", "Friends", "Party", "Notifications", "Trophies" }) do
+    S.addPageFooter(pn)
+end
 S.libUserName = make("TextLabel", {
     BackgroundTransparency = 1, AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.fromOffset(0, 30),
     Text = player.DisplayName, Font = Enum.Font.Gotham, TextSize = 13, TextColor3 = COLORS.white, LayoutOrder = 1,
@@ -3814,8 +3945,7 @@ refreshLibrary = function()
             nameLbl.TextYAlignment = Enum.TextYAlignment.Top
             nameLbl.TextTruncate = Enum.TextTruncate.AtEnd
             if e.key then
-                local k = label(cell, "Key required", UDim2.fromOffset(100, 12), UDim2.fromOffset(72, 49), 9, COLORS.muted)
-                k.TextWrapped = false
+                S.icon("lock", cell, 14, COLORS.white, UDim2.fromOffset(158, 46))
             end
             local box = make("Frame", {
                 Size = UDim2.fromOffset(14, 14), Position = UDim2.fromOffset(160, 6),
@@ -3876,23 +4006,53 @@ local sbToken = 0
 S.storeLoaded = false
 local storeCardRefs = {}
 
+-- PS4 Store blue (not touched by the theme switcher), like the Library
+do
+    local sb = storePage:FindFirstChildOfClass("Frame")
+    local g = sb and sb:FindFirstChildOfClass("UIGradient")
+    if g then
+        for i = #pageGradients, 1, -1 do
+            if pageGradients[i] == g then table.remove(pageGradients, i) end
+        end
+        g.Rotation = 35
+        g.Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, Color3.fromRGB(0, 40, 128)),
+            ColorSequenceKeypoint.new(0.5, Color3.fromRGB(0, 76, 178)),
+            ColorSequenceKeypoint.new(1, Color3.fromRGB(0, 34, 108)),
+        })
+    end
+    -- darker header band with a thin line under it (title is raised above the band)
+    make("Frame", {
+        Size = UDim2.new(1, 0, 0, 56), BackgroundColor3 = Color3.fromRGB(0, 20, 70),
+        BackgroundTransparency = 0.45, BorderSizePixel = 0,
+    }, storePage)
+    make("Frame", {
+        Size = UDim2.new(1, 0, 0, 1), Position = UDim2.fromOffset(0, 56),
+        BackgroundColor3 = COLORS.white, BackgroundTransparency = 0.8, BorderSizePixel = 0,
+    }, storePage)
+    pages.Store.title.ZIndex = 3
+end
+
+-- everything that belongs to the browse view lives in this group (the product page replaces it)
+S.browseGroup = make("Frame", { Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, BorderSizePixel = 0 }, storePage)
+
 local sbScroll = make("ScrollingFrame", {
-    Size = UDim2.fromOffset(520, 328),
-    Position = UDim2.fromOffset(179, 67),
+    Size = UDim2.fromOffset(606, 300),
+    Position = UDim2.fromOffset(186, 100),
     BackgroundTransparency = 1,
     BorderSizePixel = 0,
     ScrollBarThickness = 4,
     ScrollBarImageColor3 = COLORS.muted,
     CanvasSize = UDim2.new(),
-}, storePage)
+}, S.browseGroup)
 
-local statusLabel = label(storePage, "", UDim2.fromOffset(300, 30), UDim2.fromOffset(290, 220), 14, COLORS.muted)
+local statusLabel = label(S.browseGroup, "", UDim2.fromOffset(300, 30), UDim2.fromOffset(340, 220), 14, COLORS.muted)
 statusLabel.TextXAlignment = Enum.TextXAlignment.Center
 statusLabel.Visible = false
 
-label(storePage, "Powered by ScriptBlox.com", UDim2.fromOffset(190, 20), UDim2.fromOffset(180, H - 38), 10, COLORS.muted)
+label(S.browseGroup, "Powered by ScriptBlox.com", UDim2.fromOffset(190, 20), UDim2.fromOffset(186, H - 38), 10, COLORS.muted)
 
-S.pageLabel = label(storePage, "Page 1", UDim2.fromOffset(60, 24), UDim2.fromOffset(W - 170, H - 42), 11, COLORS.white)
+S.pageLabel = label(S.browseGroup, "Page 1", UDim2.fromOffset(60, 24), UDim2.fromOffset(W - 170, H - 42), 11, COLORS.white)
 S.pageLabel.TextXAlignment = Enum.TextXAlignment.Center
 
 function S.buildUrl()
@@ -3918,15 +4078,17 @@ function S.passes(s)
     return true
 end
 
+-- PS4 mosaic: one big tile, two wide tiles beside it, then a row of squares; 6 columns of 96 px
 S.storeSlots = {
-    { 0, 0, 405, 217 }, { 413, 0, 104, 104 }, { 413, 113, 104, 104 },
-    { 0, 226, 104, 102 }, { 113, 226, 104, 102 }, { 225, 226, 290, 102 },
+    { 0, 0, 399, 197 }, { 404, 0, 197, 96 }, { 404, 101, 197, 96 },
+    { 0, 202, 96, 96 }, { 101, 202, 96, 96 }, { 202, 202, 96, 96 },
+    { 303, 202, 96, 96 }, { 404, 202, 96, 96 }, { 505, 202, 96, 96 },
 }
 function S.storeSlot(index)
     local sl = S.storeSlots[index]
     if sl then return sl[1], sl[2], sl[3], sl[4] end
     local k = index - #S.storeSlots - 1
-    return (k % 4) * 131, 336 + math.floor(k / 4) * 131, 123, 123
+    return (k % 6) * 101, 303 + math.floor(k / 6) * 101, 96, 96
 end
 
 function S.clearStoreCards()
@@ -3943,6 +4105,7 @@ local function setStatus(text)
 end
 
 local function fetchStore()
+    if S.closeDetail then S.closeDetail(true) end
     sbToken += 1
     local token = sbToken
     S.clearStoreCards()
@@ -4018,7 +4181,7 @@ local function fetchStore()
 
             local cx, cy, cw, ch = S.storeSlot(index)
             bottom = math.max(bottom, cy + ch)
-            local big = cw >= 200
+            local big = cw >= 390
             local card = make("Frame", {
                 Position = UDim2.fromOffset(cx, cy), Size = UDim2.fromOffset(cw, ch),
                 BackgroundTransparency = 1, BorderSizePixel = 0,
@@ -4031,19 +4194,22 @@ local function fetchStore()
             cover.Size = UDim2.fromScale(1, 1)
             cover.Position = UDim2.fromOffset(0, 0)
             attachImage(cover, imgPath, gameId)
+            local info = {
+                title = title, gameName = gameName, code = code, views = views, verified = verified,
+                needsKey = needsKey, sid = sid, img = imgPath, gameId = gameId, dl = dlData,
+                likes = tonumber(s.likeCount) or 0, dislikes = tonumber(s.dislikeCount) or 0,
+                date = type(s.createdAt) == "string" and s.createdAt:sub(1, 10) or "",
+                author = type(s.owner) == "table" and tostring(s.owner.username or "") or "",
+                stype = tostring(s.scriptType or "free"), patched = s.isPatched == true,
+                desc = type(s.description) == "string" and s.description or nil,
+            }
+            -- white frame while the pointer is on a tile, like the focus frame of the PS4
+            local focus = stroke(cover, COLORS.white, 3, 1)
+            cover.MouseEnter:Connect(function() focus.Transparency = 0 end)
+            cover.MouseLeave:Connect(function() focus.Transparency = 1 end)
             cover.Activated:Connect(function()
                 playSound("Select")
-                openPanel(shortText(title, 22), {
-                    { isDownloaded(sid) and "In Library" or "Download", function() downloadScript(sid, dlData) end },
-                    { "Copy Script", function() copyText(code, "Script") end },
-                    { "Information", function()
-                        showInfo(shortText(title, 40), string.format(
-                            "Game: %s\nViews: %s\nKey: %s\nVerified: %s\n\nCode preview:\n%s",
-                            gameName, tostring(views), needsKey and "Key required" or "Keyless",
-                            verified and "yes" or "no", code:sub(1, 220)))
-                    end },
-                    { "Cancel" },
-                })
+                S.openProduct(info)
             end)
 
             local shade = make("Frame", {
@@ -4073,17 +4239,13 @@ local function fetchStore()
             }, card)
             S.icon(needsKey and "lock" or "unlock", lockBox, 16, COLORS.white, UDim2.fromOffset(3, 3))
 
-            local has = isDownloaded(sid)
-            local dl = button(card, has and "In Library" or "Download", UDim2.fromOffset(big and 80 or 62, 20),
-                UDim2.fromOffset(6, 6), has and COLORS.grey or COLORS.blue, 10)
+            local dl = button(card, "In Library", UDim2.fromOffset(big and 80 or 62, 18),
+                UDim2.fromOffset(6, 6), COLORS.grey, 10)
             dl.ZIndex = 5
+            dl.Visible = false
             storeCardRefs[sid] = dl
             refreshStoreButtons()
-            dl.Activated:Connect(function()
-                playSound("Select")
-                if isDownloaded(sid) then notify("Already in library") return end
-                downloadScript(sid, dlData)
-            end)
+            dl.Activated:Connect(function() playSound("Select"); S.openProduct(info) end)
         end
         sbScroll.CanvasSize = UDim2.fromOffset(0, bottom + 8)
     end)
@@ -4093,6 +4255,7 @@ refreshStoreButtons = function()
     for sid, btn in pairs(storeCardRefs) do
         if btn.Parent then
             local st = dlState[sid]
+            btn.Visible = (library[sid] ~= nil) or (st ~= nil)
             if library[sid] then
                 btn.Text = "In Library"
                 btn.BackgroundColor3 = COLORS.grey
@@ -4105,92 +4268,17 @@ refreshStoreButtons = function()
             end
         end
     end
+    if S.paintDetailBtn then S.paintDetailBtn() end
 end
 
 openStore = function()
+    if S.closeDetail then S.closeDetail(true) end
     showPage("Store")
     if not S.storeLoaded then
         S.storeLoaded = true
         fetchStore()
     end
 end
-
-local function styleTab(btn, active)
-    btn.BackgroundColor3 = active and Color3.fromRGB(52, 128, 232) or Color3.fromRGB(26, 82, 176)
-    btn.BackgroundTransparency = 0
-end
-
--- left menu button of the PS Store (text on the left, ">" on the right)
-function S.psMenuBtn(b, slot)
-    b.Position = UDim2.fromOffset(65, 179 + (slot - 1) * 37)
-    b.Size = UDim2.fromOffset(108, 29)
-    b.TextXAlignment = Enum.TextXAlignment.Left
-    b.TextSize = 11
-    b.Font = Enum.Font.Gotham
-    make("UIPadding", { PaddingLeft = UDim.new(0, 9) }, b)
-    local cr = b:FindFirstChildOfClass("UICorner")
-    if cr then cr.CornerRadius = UDim.new(0, 0) end
-    local chev = label(b, ">", UDim2.fromOffset(16, 29), UDim2.new(1, -24, 0, 0), 11, COLORS.white)
-    chev.TextXAlignment = Enum.TextXAlignment.Center
-    return b
-end
-
-local function makeSmallButton(text, x, w)
-    local b = make("TextButton", {
-        Size = UDim2.fromOffset(w, 28),
-        Position = UDim2.fromOffset(x, 78),
-        BackgroundColor3 = COLORS.card,
-        BackgroundTransparency = 0.5,
-        BorderSizePixel = 0,
-        Text = text,
-        Font = Enum.Font.GothamMedium,
-        TextSize = 12,
-        TextColor3 = COLORS.white,
-        AutoButtonColor = false,
-    }, storePage)
-    round(b, 6)
-    return b
-end
-
-S.tabDefs = {
-    { id = "recent", label = "New" },
-    { id = "most-viewed", label = "Trending" },
-    { id = "most-liked", label = "Popular" },
-}
-S.tabButtons = {}
-for i, tab in ipairs(S.tabDefs) do
-    local b = S.psMenuBtn(makeSmallButton(tab.label, 0, 100), i)
-    styleTab(b, i == 1)
-    S.tabButtons[tab.id] = b
-    b.Activated:Connect(function()
-        playSound("Select")
-        sbMode = tab.id
-        sbPage = 1
-        for tid, btn in pairs(S.tabButtons) do styleTab(btn, tid == sbMode) end
-        fetchStore()
-    end)
-end
-
-local keyBtn = S.psMenuBtn(makeSmallButton(S.KEY_LABELS[sbKey], 0, 100), 4)
-keyBtn.Activated:Connect(function()
-    playSound("Select")
-    local idx = table.find(S.KEY_STATES, sbKey) or 1
-    sbKey = S.KEY_STATES[idx % #S.KEY_STATES + 1]
-    keyBtn.Text = S.KEY_LABELS[sbKey]
-    styleTab(keyBtn, sbKey ~= "any")
-    sbPage = 1
-    fetchStore()
-end)
-
-local verBtn = S.psMenuBtn(makeSmallButton("Verified: Off", 0, 100), 5)
-verBtn.Activated:Connect(function()
-    playSound("Select")
-    sbVerified = not sbVerified
-    verBtn.Text = sbVerified and "Verified: On" or "Verified: Off"
-    styleTab(verBtn, sbVerified)
-    sbPage = 1
-    fetchStore()
-end)
 
 local searchBox = make("TextBox", {
     Size = UDim2.fromOffset(110, 28),
@@ -4260,52 +4348,7 @@ searchBox.FocusLost:Connect(function(enter)
     end
 end)
 
-S.chipRow = make("ScrollingFrame", {
-    Size = UDim2.fromOffset(94, 300),
-    Position = UDim2.fromOffset(702, 98),
-    BackgroundTransparency = 1,
-    BorderSizePixel = 0,
-    ScrollBarThickness = 0,
-    ScrollingDirection = Enum.ScrollingDirection.Y,
-    CanvasSize = UDim2.new(),
-    AutomaticCanvasSize = Enum.AutomaticSize.Y,
-}, storePage)
-make("UIListLayout", {
-    FillDirection = Enum.FillDirection.Vertical,
-    Padding = UDim.new(0, 5),
-    SortOrder = Enum.SortOrder.LayoutOrder,
-}, S.chipRow)
-
-S.chips = {}
-for i, g in ipairs(S.GENRES) do
-    local chip = make("TextButton", {
-        Size = UDim2.new(1, 0, 0, 26),
-        BackgroundColor3 = i == 1 and Color3.fromRGB(52, 128, 232) or Color3.fromRGB(26, 82, 176),
-        BackgroundTransparency = 0,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        BorderSizePixel = 0,
-        Text = g.name,
-        Font = Enum.Font.Gotham,
-        TextSize = 11,
-        TextColor3 = COLORS.white,
-        AutoButtonColor = false,
-        LayoutOrder = i,
-    }, S.chipRow)
-    make("UIPadding", { PaddingLeft = UDim.new(0, 9) }, chip)
-    S.chips[i] = chip
-    chip.Activated:Connect(function()
-        playSound("Select")
-        sbGenre = i
-        unlockTrophy("explorer")
-        sbQuery = ""
-        searchBox.Text = ""
-        sbPage = 1
-        for j, c in ipairs(S.chips) do styleTab(c, j == sbGenre) end
-        fetchStore()
-    end)
-end
-
--- PS Store look: header, big "PlayStation Store" tile on the left, "Quick Menu" on the right
+-- ===== PlayStation Store look: header (store - Search - Cart), left menu, mosaic =====
 do
     local t = pages.Store.title
     t.Text = "PlayStation\194\174Store"
@@ -4314,26 +4357,307 @@ do
     t.Size = UDim2.fromOffset(150, 28)
     S.icon("store", storePage, 20, COLORS.white, UDim2.fromOffset(38, 24))
     for _, c in ipairs(storePage:GetChildren()) do
-        if c:IsA("Frame") and c.Size.Y.Offset == 1 then c.Visible = false end
+        if c:IsA("Frame") and c.Size.Y.Offset == 1 and c.Position.Y.Offset ~= 56 then c.Visible = false end
     end
-    local spot = label(storePage, "PS Store Spotlight", UDim2.fromOffset(190, 28), UDim2.fromOffset(520, 20), 14, COLORS.muted)
-    spot.TextXAlignment = Enum.TextXAlignment.Right
-    local qm = label(storePage, "Quick Menu", UDim2.fromOffset(94, 22), UDim2.fromOffset(702, 70), 12, COLORS.white)
-    qm.TextWrapped = false
-    local tile = make("TextButton", {
-        Size = UDim2.fromOffset(108, 108), Position = UDim2.fromOffset(65, 67),
-        BackgroundColor3 = Color3.fromRGB(6, 26, 74), BackgroundTransparency = 0.1,
-        BorderSizePixel = 0, AutoButtonColor = false, Text = "", ZIndex = 21,
-    }, storePage)
-    stroke(tile, COLORS.white, 2, 0)
-    local tt = label(tile, "PlayStation\194\174\nStore", UDim2.new(1, -14, 0, 56), UDim2.new(0, 8, 1, -64), 16, COLORS.white, true)
-    tt.TextYAlignment = Enum.TextYAlignment.Bottom
-    tt.ZIndex = 22
-    tile.Activated:Connect(function()
-        playSound("Select")
+end
+
+S.FEEDS = {
+    { name = "What's Hot", title = "What's Hot", mode = "recent" },
+    { name = "Trending", title = "Trending Now", mode = "most-viewed" },
+    { name = "Popular", title = "Most Popular", mode = "most-liked" },
+    { name = "Keyless", title = "Keyless Scripts", mode = "recent", key = "keyless" },
+    { name = "Verified", title = "Verified Scripts", mode = "recent", verified = true },
+}
+S.feedIndex = 1
+
+-- left menu (scrolls if the window is small)
+S.sideScroll = make("ScrollingFrame", {
+    Size = UDim2.fromOffset(172, H - 57), Position = UDim2.fromOffset(0, 57),
+    BackgroundColor3 = Color3.fromRGB(0, 18, 64), BackgroundTransparency = 0.55, BorderSizePixel = 0,
+    ScrollBarThickness = 0, CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y,
+}, S.browseGroup)
+make("UIListLayout", { Padding = UDim.new(0, 2), SortOrder = Enum.SortOrder.LayoutOrder }, S.sideScroll)
+make("UIPadding", { PaddingTop = UDim.new(0, 12), PaddingBottom = UDim.new(0, 12) }, S.sideScroll)
+
+S.sideItems = {}
+do
+local sideOrder = 0
+local function sideEntry(text, kind, index, onClick)
+    sideOrder += 1
+    local b = make("TextButton", {
+        Size = UDim2.new(1, 0, 0, 26), BackgroundColor3 = Color3.fromRGB(206, 212, 224), BackgroundTransparency = 1,
+        BorderSizePixel = 0, AutoButtonColor = false, Text = text, Font = Enum.Font.Gotham, TextSize = 13,
+        TextColor3 = COLORS.white, TextXAlignment = Enum.TextXAlignment.Left, LayoutOrder = sideOrder,
+    }, S.sideScroll)
+    make("UIPadding", { PaddingLeft = UDim.new(0, 18) }, b)
+    S.sideItems[#S.sideItems + 1] = { btn = b, kind = kind, index = index }
+    b.MouseEnter:Connect(function()
+        if b.BackgroundTransparency > 0.5 then b.BackgroundTransparency = 0.85 end
+    end)
+    b.MouseLeave:Connect(function() S.paintSidebar() end)
+    b.Activated:Connect(function() playSound("Select"); onClick() end)
+    return b
+end
+local function sideDivider()
+    sideOrder += 1
+    local holder = make("Frame", {
+        Size = UDim2.new(1, 0, 0, 14), BackgroundTransparency = 1, BorderSizePixel = 0, LayoutOrder = sideOrder,
+    }, S.sideScroll)
+    make("Frame", {
+        Size = UDim2.new(1, -36, 0, 1), Position = UDim2.fromOffset(18, 7),
+        BackgroundColor3 = COLORS.white, BackgroundTransparency = 0.7, BorderSizePixel = 0,
+    }, holder)
+end
+
+
+for i, f in ipairs(S.FEEDS) do
+    sideEntry(f.name, "feed", i, function()
+        S.applyFeed(i)
+        sbQuery = ""
+        searchBox.Text = ""
         sbPage = 1
+        S.paintSidebar()
         fetchStore()
     end)
+end
+sideDivider()
+for i, g in ipairs(S.GENRES) do
+    sideEntry(g.name, "genre", i, function()
+        sbGenre = i
+        unlockTrophy("explorer")
+        sbQuery = ""
+        searchBox.Text = ""
+        sbPage = 1
+        S.paintSidebar()
+        fetchStore()
+    end)
+end
+end
+
+function S.paintSidebar()
+    for _, it in ipairs(S.sideItems) do
+        local on = (it.kind == "feed" and it.index == S.feedIndex) or (it.kind == "genre" and it.index == sbGenre)
+        it.btn.BackgroundTransparency = on and 0 or 1
+        it.btn.TextColor3 = on and Color3.fromRGB(16, 30, 56) or COLORS.white
+    end
+    local f = S.FEEDS[S.feedIndex]
+    S.storeHeading.Text = f.title .. (sbGenre > 1 and ("  -  " .. S.GENRES[sbGenre].name) or "")
+end
+
+function S.applyFeed(i)
+    local f = S.FEEDS[i]
+    S.feedIndex = i
+    sbMode = f.mode
+    sbKey = f.key or "any"
+    sbVerified = f.verified == true
+end
+
+-- heading above the mosaic, underlined like "Most Popular" on the PS4
+S.storeHeading = label(S.browseGroup, "What's Hot", UDim2.fromOffset(400, 28), UDim2.fromOffset(186, 66), 18, COLORS.white)
+S.storeHeading.TextWrapped = false
+make("Frame", {
+    Size = UDim2.fromOffset(120, 2), Position = UDim2.fromOffset(188, 94),
+    BackgroundColor3 = COLORS.white, BackgroundTransparency = 0.35, BorderSizePixel = 0,
+}, S.browseGroup)
+S.paintSidebar()
+
+-- ===== product page (what you get when you pick a tile) =====
+S.detailGroup = make("CanvasGroup", {
+    Size = UDim2.fromScale(1, 1), Position = UDim2.fromOffset(0, 0), BackgroundTransparency = 1,
+    GroupTransparency = 1, Visible = false,
+}, storePage)
+
+function S.fmtNum(n)
+    if n >= 1000000 then return string.format("%.1fM", n / 1000000) end
+    if n >= 1000 then return string.format("%.1fK", n / 1000) end
+    return tostring(n)
+end
+
+function S.closeDetail(instant)
+    if not S.detailOpen then return end
+    S.detailOpen = false
+    S.detailRef = nil
+    S.browseGroup.Visible = true
+    if instant then
+        S.detailGroup.Visible = false
+        S.detailGroup.GroupTransparency = 1
+    else
+        tween(S.detailGroup, 0.15, { GroupTransparency = 1 })
+        task.delay(0.16, function()
+            if not S.detailOpen then S.detailGroup.Visible = false end
+        end)
+    end
+end
+
+function S.paintDetailBtn()
+    local r = S.detailRef
+    if not r or not r.btn.Parent then return end
+    local st = dlState[r.sid]
+    local text, sub = "Download", "Free"
+    if library[r.sid] then text, sub = "In Library", "Owned"
+    elseif st then
+        text = st.status == "Waiting" and "Queued" or (st.paused and "Paused" or ("Downloading " .. math.floor(st.progress * 100) .. "%"))
+        sub = ""
+    end
+    r.left.Text = text
+    r.right.Text = sub
+end
+
+function S.openProduct(info)
+    if S.detailOpen then return end
+    for _, c in ipairs(S.detailGroup:GetChildren()) do c:Destroy() end
+    S.detailOpen = true
+    S.browseGroup.Visible = false
+    local G = S.detailGroup
+
+    -- cover (left)
+    local cover = makeCover(G, "Frame", S.colorFor(info.title), shortText(info.title, 14))
+    cover.Size = UDim2.fromOffset(170, 170)
+    cover.Position = UDim2.fromOffset(60, 72)
+    local cr = cover:FindFirstChildOfClass("UICorner")
+    if cr then cr.CornerRadius = UDim.new(0, 0) end
+    if info.img or info.gameId then attachImage(cover, info.img, info.gameId) end
+
+    -- "Add to cart  $59.99"  ->  "Download  Free" (white frame like the PS4 button)
+    local btn = make("TextButton", {
+        Size = UDim2.fromOffset(170, 32), Position = UDim2.fromOffset(60, 250),
+        BackgroundColor3 = Color3.fromRGB(6, 14, 38), BackgroundTransparency = 0.05,
+        BorderSizePixel = 0, AutoButtonColor = false, Text = "",
+    }, G)
+    stroke(btn, COLORS.white, 2, 0)
+    local left = label(btn, "Download", UDim2.fromOffset(120, 32), UDim2.fromOffset(9, 0), 13, COLORS.white, true)
+    left.TextWrapped = false
+    local right = label(btn, "Free", UDim2.fromOffset(60, 32), UDim2.new(1, -66, 0, 0), 13, COLORS.white, true)
+    right.TextXAlignment = Enum.TextXAlignment.Right
+    right.TextWrapped = false
+    S.detailRef = { sid = info.sid, btn = btn, left = left, right = right }
+    S.paintDetailBtn()
+    btn.Activated:Connect(function()
+        playSound("Select")
+        if library[info.sid] then notify("Already in library") return end
+        if dlState[info.sid] then notify("Already downloading") return end
+        downloadScript(info.sid, info.dl)
+    end)
+
+    -- "Overview" tab bar under the button
+    local tab = make("Frame", {
+        Size = UDim2.fromOffset(170, 20), Position = UDim2.fromOffset(60, 292),
+        BackgroundColor3 = Color3.fromRGB(150, 168, 205), BorderSizePixel = 0,
+    }, G)
+    make("UIGradient", {
+        Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.1), NumberSequenceKeypoint.new(1, 1) }),
+    }, tab)
+    local tl = label(tab, "Overview", UDim2.fromOffset(120, 20), UDim2.fromOffset(9, 0), 11, COLORS.white)
+    tl.TextWrapped = false
+
+    -- title, "Overview" label and the thin line
+    local title = label(G, info.title, UDim2.fromOffset(330, 34), UDim2.fromOffset(300, 66), 22, COLORS.white)
+    title.TextWrapped = false
+    title.TextTruncate = Enum.TextTruncate.AtEnd
+    local ov = label(G, "Overview", UDim2.fromOffset(100, 22), UDim2.fromOffset(640, 72), 12, COLORS.muted)
+    ov.TextXAlignment = Enum.TextXAlignment.Right
+    make("Frame", {
+        Size = UDim2.fromOffset(440, 1), Position = UDim2.fromOffset(300, 104),
+        BackgroundColor3 = COLORS.white, BackgroundTransparency = 0.5, BorderSizePixel = 0,
+    }, G)
+
+    -- info row: SCRIPT | Free | Keyless | date | stars (votes) | author
+    local total = info.likes + info.dislikes
+    local stars = total > 0 and math.floor(5 * info.likes / total + 0.5) or 0
+    local parts = { "SCRIPT", (info.stype:sub(1, 1):upper() .. info.stype:sub(2)), info.needsKey and "Key required" or "Keyless" }
+    if info.date ~= "" then parts[#parts + 1] = info.date end
+    if total > 0 then parts[#parts + 1] = string.rep("\226\152\133", stars) .. string.rep("\226\152\134", 5 - stars) .. " (" .. total .. ")" end
+    if info.verified then parts[#parts + 1] = "Verified" end
+    if info.author ~= "" then parts[#parts + 1] = shortText(info.author, 16) end
+    local meta = label(G, table.concat(parts, "  |  "), UDim2.fromOffset(440, 20), UDim2.fromOffset(300, 120), 11, COLORS.white)
+    meta.TextWrapped = false
+    meta.TextTruncate = Enum.TextTruncate.AtEnd
+
+    -- description box (dark, like the PS4)
+    local box = make("Frame", {
+        Size = UDim2.fromOffset(222, 108), Position = UDim2.fromOffset(300, 156),
+        BackgroundColor3 = Color3.fromRGB(4, 22, 70), BackgroundTransparency = 0.15, BorderSizePixel = 0, ClipsDescendants = true,
+    }, G)
+    local lines = {}
+    if info.desc and info.desc ~= "" then lines[#lines + 1] = shortText(info.desc, 120) end
+    lines[#lines + 1] = "Game: " .. info.gameName
+    lines[#lines + 1] = S.fmtNum(info.views) .. " views  -  " .. S.fmtNum(info.likes) .. " likes"
+    lines[#lines + 1] = info.needsKey and "A key is required to use this script." or "No key needed - ready to run."
+    if info.patched then lines[#lines + 1] = "Marked as patched: it may not work." end
+    local dtext = label(box, table.concat(lines, "\n"), UDim2.new(1, -16, 1, -12), UDim2.fromOffset(8, 6), 11, COLORS.white)
+    dtext.TextYAlignment = Enum.TextYAlignment.Top
+
+    -- "Play Trailer" tile -> "Run Now"
+    local run = make("TextButton", {
+        Size = UDim2.fromOffset(218, 108), Position = UDim2.fromOffset(526, 156),
+        BackgroundColor3 = Color3.fromRGB(10, 40, 100), BorderSizePixel = 0, AutoButtonColor = false, Text = "",
+    }, G)
+    local rcover = makeCover(run, "Frame", S.colorFor(info.title), "")
+    rcover.Size = UDim2.fromScale(1, 1)
+    local rcr = rcover:FindFirstChildOfClass("UICorner")
+    if rcr then rcr.CornerRadius = UDim.new(0, 0) end
+    if info.img or info.gameId then attachImage(rcover, info.img, info.gameId) end
+    local ring = make("Frame", {
+        Size = UDim2.fromOffset(34, 34), Position = UDim2.new(0.5, -17, 0.5, -22), BackgroundColor3 = Color3.new(0, 0, 0),
+        BackgroundTransparency = 0.4, BorderSizePixel = 0, ZIndex = 3,
+    }, run)
+    circle(ring)
+    stroke(ring, COLORS.white, 2, 0)
+    local play = S.icon("triangle", ring, 14, COLORS.white, UDim2.fromOffset(10, 9))
+    play.Rotation = 90
+    local cap = make("Frame", {
+        AnchorPoint = Vector2.new(0, 1), Position = UDim2.fromScale(0, 1), Size = UDim2.new(1, 0, 0, 22),
+        BackgroundColor3 = Color3.new(0, 0, 0), BackgroundTransparency = 0.35, BorderSizePixel = 0, ZIndex = 3,
+    }, run)
+    local cl = label(cap, "Run Now", UDim2.new(1, -14, 1, 0), UDim2.fromOffset(8, 0), 12, COLORS.white, true)
+    cl.ZIndex = 4
+    local rf = stroke(run, COLORS.white, 3, 1)
+    run.MouseEnter:Connect(function() rf.Transparency = 0 end)
+    run.MouseLeave:Connect(function() rf.Transparency = 1 end)
+    run.Activated:Connect(function()
+        playSound("Select")
+        execScript(info.code)
+    end)
+
+    -- Back (bottom left) and OPTIONS (bottom right), like the PS4 hints
+    local back = make("TextButton", {
+        Size = UDim2.fromOffset(110, 30), Position = UDim2.fromOffset(40, H - 44), BackgroundTransparency = 1, Text = "",
+    }, G)
+    S.icon("circle", back, 18, COLORS.white, UDim2.fromOffset(0, 6))
+    label(back, "Back", UDim2.fromOffset(70, 30), UDim2.fromOffset(26, 0), 14, COLORS.white)
+    back.Activated:Connect(function() playSound("Close"); S.closeDetail() end)
+
+    local opt = make("TextButton", {
+        Size = UDim2.fromOffset(172, 26), Position = UDim2.fromOffset(W - 212, H - 44),
+        BackgroundColor3 = Color3.fromRGB(4, 22, 70), BackgroundTransparency = 0.2, BorderSizePixel = 0,
+        AutoButtonColor = false, Text = "",
+    }, G)
+    local tag = make("Frame", {
+        Size = UDim2.fromOffset(52, 16), Position = UDim2.fromOffset(6, 5), BackgroundColor3 = Color3.fromRGB(150, 168, 205), BorderSizePixel = 0,
+    }, opt)
+    round(tag, 3)
+    local tt = label(tag, "OPTIONS", UDim2.fromScale(1, 1), UDim2.fromOffset(0, 0), 9, Color3.fromRGB(10, 24, 56), true)
+    tt.TextXAlignment = Enum.TextXAlignment.Center
+    tt.TextWrapped = false
+    local ot = label(opt, "Copy / Information", UDim2.fromOffset(106, 26), UDim2.fromOffset(64, 0), 10, COLORS.white)
+    ot.TextWrapped = false
+    opt.Activated:Connect(function()
+        playSound("Select")
+        openPanel(shortText(info.title, 22), {
+            { "Copy Script", function() copyText(info.code, "Script") end },
+            { "Information", function()
+                showInfo(shortText(info.title, 40), string.format(
+                    "Game: %s\nViews: %s\nKey: %s\nVerified: %s\n\nCode preview:\n%s",
+                    info.gameName, tostring(info.views), info.needsKey and "Key required" or "Keyless",
+                    info.verified and "yes" or "no", info.code:sub(1, 220)))
+            end },
+            { "Cancel" },
+        })
+    end)
+
+    G.Visible = true
+    G.GroupTransparency = 1
+    tween(G, 0.18, { GroupTransparency = 0 })
 end
 
 function S.openGenre(i)
@@ -4341,14 +4665,14 @@ function S.openGenre(i)
     sbQuery = ""
     searchBox.Text = ""
     sbPage = 1
-    for j, c in ipairs(S.chips) do styleTab(c, j == sbGenre) end
+    S.paintSidebar()
     S.storeLoaded = true
     showPage("Store")
     fetchStore()
 end
 
-S.prevBtn = button(storePage, "‹ Prev", UDim2.fromOffset(56, 24), UDim2.fromOffset(W - 232, H - 42), COLORS.card, 11)
-S.nextBtn = button(storePage, "Next ›", UDim2.fromOffset(56, 24), UDim2.fromOffset(W - 104, H - 42), COLORS.card, 11)
+S.prevBtn = button(S.browseGroup, "‹ Prev", UDim2.fromOffset(56, 24), UDim2.fromOffset(W - 232, H - 42), COLORS.card, 11)
+S.nextBtn = button(S.browseGroup, "Next ›", UDim2.fromOffset(56, 24), UDim2.fromOffset(W - 104, H - 42), COLORS.card, 11)
 S.prevBtn.Activated:Connect(function()
     if sbPage > 1 then sbPage -= 1; fetchStore() else notify("First page") end
 end)
@@ -5112,20 +5436,12 @@ S.SETTINGS = {
             end },
         }
     end },
-    { id = "Owner", icon = "👑", build = function()
-        return {
-            { type = "info", text = "Owner User ID", value = "8407673016" },
-            { type = "info", text = "Access", value = S.isOwner and "Verified Owner" or "Owner only" },
-            { type = "action", text = "Open Owner Panel", onclick = function() S.openOwnerPanel() end },
-            { type = "action", text = "View Owner Action Logs", onclick = function() S.showOwnerLogs() end },
-        }
-    end },
     { id = "Account Management", icon = "♙", build = function()
         return {
             { type = "info", text = "Display Name", value = player.DisplayName },
             { type = "info", text = "Username", value = "@" .. player.Name },
             { type = "info", text = "Account Age", value = player.AccountAge .. " days" },
-            { type = "info", text = "Membership", value = S.isOwner and "Owner" or (S.isPremium and "Premium" or player.MembershipType.Name) },
+            { type = "info", text = "Membership", value = player.MembershipType.Name },
             { type = "action", text = "View Account Details", onclick = function() S.showAccount() end },
         }
     end },
@@ -5163,7 +5479,6 @@ S.SETTINGS = {
 
 function S.openSetting(def)
     if not def then return end
-    if def.id == "Owner" and not S.isOwner then notify("Owner access required"); return end
     if def.open then
         S.run(def.open)
         return
@@ -5680,7 +5995,7 @@ end
 function S.loadOrbis()
     if S.orbis then return S.orbis end
     local ok, mod = pcall(function() return loadstring(httpGet(S.ORBIS_URL))() end)
-    if ok and type(mod) == "table" and type(mod.verify) == "function" and type(mod.resume) == "function" then
+    if ok and type(mod) == "table" and type(mod.verify) == "function" and type(mod.resume) == "function" and type(mod.ownerAccounts) == "function" then
         S.orbis = mod
         return mod
     end
@@ -5692,6 +6007,7 @@ function S.applyProfile(p)
     if not p then return end
     if S.userName then S.userName.Text = p.name end
     if S.libUserName then S.libUserName.Text = p.name end
+    for _, n in ipairs(S.footerNames or {}) do n.Text = p.name end
 end
 
 function S.loginGate(onDone)
@@ -5751,11 +6067,8 @@ function S.loginGate(onDone)
         l.TextWrapped = false
     end
 
-    local function finish(p, authResult)
+    local function finish(p)
         if not alive then return end
-        S.isOwner = authResult and authResult.isOwner == true or false
-        S.isPremium = authResult and authResult.premium == true or S.isOwner
-        if S.buildSettingsGrid then S.buildSettingsGrid() end
         alive = false
         S.saveLogin()
         S.applyProfile(p)
@@ -5770,37 +6083,13 @@ function S.loginGate(onDone)
 
     local editMode = false
 
-    local function renameProfile(p)
-        S.openKeyboard("Rename profile", p.name or player.DisplayName, {
-            hint = "Choose the name shown in your Hub profile.",
-            onDone = function(text)
-                text = tostring(text or ""):gsub("^%s+", ""):gsub("%s+$", ""):sub(1, 16)
-                if text == "" then text = player.DisplayName end
-                p.name = text
-                S.saveLogin()
-                if S.profile == p then S.applyProfile(p) end
-                notify("Profile name updated")
-                if alive then showPicker() end
-            end,
-        })
-    end
-
     local function confirmDelete(p)
-        S.showDialog('Delete the profile "' .. p.name .. '"?', nil, "This removes the saved dashboard profile.", {
+        S.showDialog('Delete the profile "' .. p.name .. '"?', nil, "Its saved login is removed too.", {
             { "Delete", function()
                 for idx, q in ipairs(S.login.profiles) do
                     if q == p then table.remove(S.login.profiles, idx) break end
                 end
-                if S.profile == p then
-                    S.profile = nil
-                    if S.userName then S.userName.Text = player.DisplayName end
-                    if S.libUserName then S.libUserName.Text = player.DisplayName end
-                end
-                local stillUsed = false
-                for _, remaining in ipairs(S.login.profiles) do
-                    if tostring(remaining.userId) == tostring(p.userId) then stillUsed = true break end
-                end
-                if not stillUsed and S.orbis then S.orbis.clear(p.userId) end
+                if S.orbis then S.orbis.clear(p.userId) end
                 S.saveLogin()
                 notify("Profile removed")
                 if alive then showPicker() end
@@ -5819,7 +6108,7 @@ function S.loginGate(onDone)
             ld.close()
             if not alive then return end
             if r.ok then
-                finish(p, r)
+                finish(p)
             elseif r.reason == "session_invalid" or r.reason == "none" then
                 showPasscode(p, r.message ~= "" and r.message or nil) -- expired: ask for a new passcode
             else
@@ -5833,86 +6122,16 @@ function S.loginGate(onDone)
         if #S.login.profiles == 0 then editMode = false end
         centered("Welcome Back to PlayStation\194\174", 84, 20)
         centered("Who is playing?", 118, 13, COLORS.white)
-        local profileLimitText = tostring(player.UserId) == "8407673016" and "Saved profiles: " .. #S.login.profiles .. " • Unlimited" or "Saved profiles: " .. #S.login.profiles .. " / 5"
-        centered(profileLimitText, 140, 11, COLORS.muted)
-        -- Create Account is first; saved accounts appear to its right in the carousel.
         local entries = {}
-        local profileLimit = tostring(player.UserId) == "8407673016" and math.huge or 5
-        if #S.login.profiles < profileLimit then table.insert(entries, { new = true }) end
+        if #S.login.profiles < 4 then table.insert(entries, { new = true }) end
         for _, p in ipairs(S.login.profiles) do table.insert(entries, { profile = p }) end
-        local tw, gap = 114, 18
-        local profileGrid = make("ScrollingFrame", {
-            Name = "ProfileGrid", Size = UDim2.new(1, -40, 0, 206), Position = UDim2.fromOffset(20, 160),
-            BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 0,
-            CanvasSize = UDim2.fromOffset(0, 206), ScrollingDirection = Enum.ScrollingDirection.X,
-            AutomaticCanvasSize = Enum.AutomaticSize.X, ScrollingEnabled = true,
-            ElasticBehavior = Enum.ElasticBehavior.WhenScrollable,
-        }, holder)
-        local carouselLayout = make("UIListLayout", {
-            FillDirection = Enum.FillDirection.Horizontal,
-            HorizontalAlignment = Enum.HorizontalAlignment.Left,
-            VerticalAlignment = Enum.VerticalAlignment.Center,
-            Padding = UDim.new(0, gap),
-            SortOrder = Enum.SortOrder.LayoutOrder,
-        }, profileGrid)
-        make("UIPadding", {
-            PaddingLeft = UDim.new(0, math.max(0, (W - 40 - tw) / 2)),
-            PaddingRight = UDim.new(0, math.max(0, (W - 40 - tw) / 2)),
-        }, profileGrid)
-        local carouselTiles = {}
-        local focusedItem = nil
-        local function focusCarousel()
-            local centerX = profileGrid.AbsolutePosition.X + profileGrid.AbsoluteSize.X / 2
-            local nearest, nearestDistance
-            for _, item in ipairs(carouselTiles) do
-                local tile = item.tile
-                local tileCenter = tile.AbsolutePosition.X + tile.AbsoluteSize.X / 2
-                local distance = math.abs(centerX - tileCenter)
-                if not nearestDistance or distance < nearestDistance then
-                    nearest, nearestDistance = item, distance
-                end
-            end
-            if nearest == focusedItem then return end
-            focusedItem = nearest
-            for _, item in ipairs(carouselTiles) do
-                local focused = item == nearest
-                local scale = item.scale
-                tween(scale, 0.16, { Scale = focused and 1.16 or 0.88 })
-                item.tile.ZIndex = focused and 5 or 2
-                item.tile.BackgroundTransparency = focused and 0 or 0.12
-            end
-        end
-        local snapToken = 0
-        profileGrid:GetPropertyChangedSignal("CanvasPosition"):Connect(function()
-            focusCarousel()
-            snapToken += 1
-            local mine = snapToken
-            task.delay(0.18, function()
-                if mine ~= snapToken or not profileGrid.Parent then return end
-                local centerX = profileGrid.AbsolutePosition.X + profileGrid.AbsoluteSize.X / 2
-                local nearest, nearestDelta
-                for _, item in ipairs(carouselTiles) do
-                    local tile = item.tile
-                    local tileCenter = tile.AbsolutePosition.X + tile.AbsoluteSize.X / 2
-                    local delta = tileCenter - centerX
-                    if not nearestDelta or math.abs(delta) < math.abs(nearestDelta) then
-                        nearest, nearestDelta = item, delta
-                    end
-                end
-                if nearest and nearestDelta and math.abs(nearestDelta) > 2 then
-                    tween(profileGrid, 0.16, {
-                        CanvasPosition = Vector2.new(math.max(0, profileGrid.CanvasPosition.X + nearestDelta), 0)
-                    })
-                end
-            end)
-        end)
+        local tw, gap = 114, 14
+        local x0 = (W - (#entries * tw + (#entries - 1) * gap)) / 2
         for i, en in ipairs(entries) do
             local tile = make("TextButton", {
-                LayoutOrder = i, Size = UDim2.fromOffset(tw, 168),
+                Size = UDim2.fromOffset(tw, 168), Position = UDim2.fromOffset(x0 + (i - 1) * (tw + gap), 170),
                 BackgroundColor3 = Color3.fromRGB(28, 112, 218), BorderSizePixel = 0, AutoButtonColor = false, Text = "",
-            }, profileGrid)
-            local tileScale = make("UIScale", { Scale = 0.88 }, tile)
-            table.insert(carouselTiles, { tile = tile, scale = tileScale })
+            }, holder)
             local st = stroke(tile, COLORS.white, 3, 1)
             tile.MouseEnter:Connect(function() st.Transparency = 0 end)
             tile.MouseLeave:Connect(function() st.Transparency = 1 end)
@@ -5922,54 +6141,24 @@ function S.loginGate(onDone)
                 local nm = label(tile, "New User", UDim2.fromOffset(tw, 40), UDim2.fromOffset(0, 128), 12, COLORS.white, true)
                 nm.TextXAlignment = Enum.TextXAlignment.Center
                 tile.Activated:Connect(function()
-                    if focusedItem == nil or focusedItem.tile ~= tile then
-                        notify("Move Create Account to the center first")
-                        return
-                    end
                     playSound("Select")
-                    local profileLimit = tostring(player.UserId) == "8407673016" and math.huge or 5
-                    if #S.login.profiles >= profileLimit then
-                        notify("You have reached your profile limit")
-                        return
-                    end
-                    S.openKeyboard("Roblox username", player.Name, {
-                        hint = "Enter the Roblox username for this account.",
-                        onDone = function(username)
-                            username = tostring(username or ""):gsub("^%s+", ""):gsub("%s+$", ""):gsub("^@", "")
-                            if username == "" then notify("Enter a Roblox username"); return end
-                            task.spawn(function()
-                                local ok, userId = pcall(function()
-                                    return Players:GetUserIdFromNameAsync(username)
-                                end)
-                                if not ok or not tonumber(userId) then
-                                    notify("Could not find that Roblox username")
-                                    return
-                                end
-                                userId = tonumber(userId)
-                                for _, existing in ipairs(S.login.profiles) do
-                                    if tonumber(existing.userId) == userId then
-                                        notify("That Roblox account is already saved")
-                                        pickProfile(existing)
-                                        return
-                                    end
-                                end
-                                local canonicalName = username
-                                pcall(function() canonicalName = Players:GetNameFromUserIdAsync(userId) end)
-                                S.openKeyboard("Hub display name", canonicalName, {
-                                    hint = "Choose the name shown in your Hub. This does not rename Roblox.",
-                                    onDone = function(displayName)
-                                        displayName = tostring(displayName or ""):gsub("^%s+", ""):gsub("%s+$", ""):sub(1, 16)
-                                        if displayName == "" then displayName = canonicalName:sub(1, 16) end
-                                        local prof = {
-                                            name = displayName, username = canonicalName, userId = userId,
-                                            profileId = HttpService:GenerateGUID(false)
-                                        }
-                                        table.insert(S.login.profiles, prof)
-                                        S.saveLogin()
-                                        pickProfile(prof)
-                                    end,
-                                })
-                            end)
+                    S.openKeyboard("Choose your name", player.DisplayName, {
+                        hint = "Pick the name shown on your profile.",
+                        onDone = function(text)
+                            text = text:gsub("^%s+", ""):gsub("%s+$", "")
+                            if text == "" then text = player.DisplayName end
+                            text = text:sub(1, 16)
+                            local prof
+                            for _, p in ipairs(S.login.profiles) do
+                                if p.userId == player.UserId then prof = p end
+                            end
+                            if prof then prof.name = text
+                            else
+                                prof = { name = text, userId = player.UserId }
+                                table.insert(S.login.profiles, prof)
+                            end
+                            S.saveLogin()
+                            pickProfile(prof)
                         end,
                     })
                 end)
@@ -5980,23 +6169,20 @@ function S.loginGate(onDone)
                     Size = UDim2.fromOffset(tw, 114), BackgroundColor3 = COLORS.card, BorderSizePixel = 0, Image = "",
                 }, tile)
                 loadBust(img, p.userId)
-                local nm = label(tile, p.name, UDim2.fromOffset(tw - 22, 22), UDim2.fromOffset(8, 114), 12, COLORS.white, true)
+                local nm = label(tile, p.name, UDim2.fromOffset(tw - 22, 54), UDim2.fromOffset(8, 114), 12, COLORS.white, true)
                 nm.TextTruncate = Enum.TextTruncate.AtEnd
                 nm.TextWrapped = false
-                local accountName = label(tile, "@" .. tostring(p.username or p.userId), UDim2.fromOffset(tw - 16, 18), UDim2.fromOffset(8, 137), 9, COLORS.muted)
-                accountName.TextTruncate = Enum.TextTruncate.AtEnd
-                accountName.TextWrapped = false
                 if S.orbis.load(p.userId) then
                     local plus = label(tile, "+", UDim2.fromOffset(14, 54), UDim2.fromOffset(tw - 20, 114), 16, Color3.fromRGB(255, 196, 0), true)
                     plus.TextXAlignment = Enum.TextXAlignment.Center
                 end
-                    if editMode then
+                if editMode then
                     local badge = make("Frame", {
                         Size = UDim2.fromOffset(26, 26), Position = UDim2.fromOffset(tw - 32, 6),
-                        BackgroundColor3 = Color3.fromRGB(28, 112, 218), BorderSizePixel = 0,
+                        BackgroundColor3 = Color3.fromRGB(214, 48, 58), BorderSizePixel = 0,
                     }, tile)
                     circle(badge)
-                    S.icon("pencil", badge, 14, COLORS.white, UDim2.fromOffset(6, 6))
+                    S.icon("cross", badge, 14, COLORS.white, UDim2.fromOffset(6, 6))
                 end
                 -- hold a profile for 0.7s (phone) to delete it
                 tile.InputBegan:Connect(function(input)
@@ -6016,32 +6202,14 @@ function S.loginGate(onDone)
                 tile.InputEnded:Connect(function() held = false end)
                 tile.Activated:Connect(function()
                     if didLong then didLong = false return end
-                    if focusedItem == nil or focusedItem.tile ~= tile then
-                        notify("Move this account to the center first")
-                        return
-                    end
                     playSound("Select")
-                    if editMode then renameProfile(p) else pickProfile(p) end
+                    if editMode then confirmDelete(p) else pickProfile(p) end
                 end)
                 tile.MouseButton2Click:Connect(function() playSound("Select"); confirmDelete(p) end)
             end
         end
-        task.defer(function()
-            if not profileGrid.Parent then return end
-            task.wait()
-            -- Start with Create Account centered; saved profiles line up to its right.
-            if #entries > 0 then
-                for _, item in ipairs(carouselTiles) do
-                    if item.tile.LayoutOrder == 1 then
-                        local x = item.tile.AbsolutePosition.X + item.tile.AbsoluteSize.X / 2
-                            - (profileGrid.AbsolutePosition.X + profileGrid.AbsoluteSize.X / 2)
-                        profileGrid.CanvasPosition = Vector2.new(math.max(0, profileGrid.CanvasPosition.X + x), 0)
-                        break
-                    end
-                end
-            end
-            focusCarousel()
-        end)
+        hint("cross", "Enter", 40)
+        centered(editMode and "Tap a profile to delete it" or "Need a passcode? Join our Discord to get one.", 346, 12, COLORS.white)
         local dc = make("TextButton", {
             Size = UDim2.fromOffset(230, 28), Position = UDim2.fromOffset((W - 230) / 2, 372),
             BackgroundColor3 = Color3.fromRGB(88, 101, 242), BorderSizePixel = 0, AutoButtonColor = true,
@@ -6128,7 +6296,7 @@ function S.loginGate(onDone)
                 local r = S.orbis.verify(code, p.userId) -- POST /verify, saves the session token on success
                 if not alive then return end
                 if r.ok then
-                    finish(p, r)
+                    finish(p)
                     return
                 end
                 code = ""
@@ -6252,11 +6420,11 @@ S.NEWS = {
     cooldown = 30, -- seconds between posts
     cats = {
         { name = "Release",    color = Color3.fromRGB(46, 160, 90),  embed = 0x2EA05A,
-          hook = "https://discord.com/api/webhooks/1565736121827336382/FbSiBz9Nh3NvaU9x--04V6Li2GJ7lSSXUrXkZFB4Q76vF4NAnC_8g1fjoh7IjdLue9Mz" },
+          hook = "" },
         { name = "Showcase",   color = Color3.fromRGB(150, 80, 210), embed = 0x9650D2,
-          hook = "https://discord.com/api/webhooks/1565736272738263111/8Zs_hJe0Z_zVxXCbGgzfs7uyNwntDqNC0MuxADR4EovVMaTbI3_zIzxCIk_R1XlBKmZK" },
+          hook = "" },
         { name = "Bug Report", color = Color3.fromRGB(200, 70, 70),  embed = 0xC84646,
-          hook = "https://discord.com/api/webhooks/1565737750697869462/6RFwKz_FAEoWL9uwQEuK1X5z55TPd5EZ5hNbW0kxHFLccgmTDvDd14ZigksVT-7-bDt7" },
+          hook = "" },
     },
 }
 S.newsSel, S.newsNext, S.newsBusy = 1, 0, false
@@ -6325,6 +6493,10 @@ end
 function S.sendNews()
     if S.newsBusy then return end
     local cat = S.NEWS.cats[S.newsSel]
+    if not cat.hook or cat.hook == "" then
+        notify("Discord posting is disabled until a secure server-side webhook is configured.")
+        return
+    end
     local title = S.newsTitle.Text:match("^%s*(.-)%s*$")
     local body = S.newsBody.Text:match("^%s*(.-)%s*$")
     if title == "" then notify("Add a title first") return end
@@ -6384,9 +6556,180 @@ function S.sendNews()
 end
 S.newsSend.Activated:Connect(function() playSound("Select"); S.sendNews() end)
 
+
+-- ===== Presence + Owner panel =====
+-- The dashboard tells the server "I'm online" every minute. Who the OWNER is gets decided by the server
+-- (it checks the Roblox account behind your session), never by this script.
+function S.applyPresence(r)
+    S.pres = r
+    if r.owner and not S.isOwner then
+        S.isOwner = true
+        if S.fnIcons.Owner then S.fnIcons.Owner.Visible = true end
+        notify("Hello Owner")
+        task.delay(3.5, function() -- open the user list once after login, if nothing else is open
+            if S.isOwner and not S.ownerShown and not currentPage and not minimized then
+                S.ownerShown = true
+                S.openOwnerPanel()
+            end
+        end)
+    end
+    local n = #(r.incoming or {})
+    if n > (S.lastReqCount or 0) then notify("New friend request (" .. n .. ")") end
+    S.lastReqCount = n
+end
+
+function S.startPresence()
+    if S.presenceRunning or not S.orbis then return end
+    S.presenceRunning = true
+    task.spawn(function()
+        -- The current Orbis Worker exposes owner-only account management, not a
+        -- public presence endpoint. Use the supported endpoint to confirm Owner access.
+        local r = S.orbis.ownerAccounts(player.UserId)
+        if r and r.ok then
+            S.isOwner = true
+            if S.fnIcons.Owner then S.fnIcons.Owner.Visible = true end
+            notify("Hello Owner")
+            task.delay(3.5, function()
+                if S.isOwner and not S.ownerShown and not currentPage and not minimized then
+                    S.ownerShown = true
+                    S.openOwnerPanel()
+                end
+            end)
+        end
+        S.presenceRunning = false
+    end)
+end
+
+S.ownerPage = makePage("Owner", "Owner Panel")
+S.addPageFooter("Owner")
+S.ownerFilter, S.ownerSort, S.ownerQuery, S.ownerUsers = "all", 1, "", {}
+S.ownerSorts = { "Name: A-Z", "Last seen" }
+S.ownerSummary = label(S.ownerPage, "", UDim2.fromOffset(300, 20), UDim2.fromOffset(W - 340, 34), 13, COLORS.muted)
+S.ownerSummary.TextXAlignment = Enum.TextXAlignment.Right
+S.ownerScroll = makeListScroll(S.ownerPage, 114, H - 114 - 58)
+S.ownerChips = {}
+
+function S.ownerChip(text, x, w, id)
+    local b = button(S.ownerPage, text, UDim2.fromOffset(w, 28), UDim2.fromOffset(x, 76), COLORS.card, 12)
+    S.ownerChips[id] = b
+    b.Activated:Connect(function() playSound("Select"); S.ownerFilter = id; S.renderOwner() end)
+end
+S.ownerChip("All", 40, 80, "all")
+S.ownerChip("Recent", 128, 90, "online")
+S.ownerChip("Older", 226, 90, "offline")
+S.ownerSortBtn = button(S.ownerPage, "Name: A-Z", UDim2.fromOffset(130, 28), UDim2.fromOffset(324, 76), COLORS.card, 12)
+S.ownerSortBtn.Activated:Connect(function()
+    playSound("Select")
+    S.ownerSort = S.ownerSort % #S.ownerSorts + 1
+    S.renderOwner()
+end)
+do -- search bar: outline + icon, opens the keyboard
+    local bar = make("Frame", {
+        Size = UDim2.fromOffset(294, 28), Position = UDim2.fromOffset(466, 76), BackgroundTransparency = 1, BorderSizePixel = 0,
+    }, S.ownerPage)
+    stroke(bar, COLORS.white, 1.5, 0.2)
+    S.icon("search", bar, 16, COLORS.white, UDim2.fromOffset(8, 6))
+    S.ownerSearchLbl = label(bar, "Search users", UDim2.fromOffset(250, 28), UDim2.fromOffset(32, 0), 12, COLORS.white)
+    S.ownerSearchLbl.TextWrapped = false
+    S.ownerSearchLbl.TextTruncate = Enum.TextTruncate.AtEnd
+    local hit = make("TextButton", {
+        Size = UDim2.fromOffset(294, 28), Position = UDim2.fromOffset(466, 76), BackgroundTransparency = 1, Text = "", AutoButtonColor = false,
+    }, S.ownerPage)
+    hit.Activated:Connect(function()
+        playSound("Select")
+        S.openKeyboard("Search users", S.ownerQuery, {
+            hint = "Search by name or user ID.",
+            onDone = function(t) S.ownerQuery = t; S.renderOwner() end,
+            results = function(text)
+                local out, total, q = {}, 0, text:lower()
+                for _, u in ipairs(S.ownerUsers) do
+                    if q == "" or u.name:lower():find(q, 1, true) or u.display:lower():find(q, 1, true) or u.uid:find(q, 1, true) then
+                        total += 1
+                        if #out < 5 then out[#out + 1] = u.display end
+                    end
+                end
+                return out, total
+            end,
+        })
+    end)
+end
+
+function S.renderOwner()
+    for id, b in pairs(S.ownerChips) do b.BackgroundColor3 = (S.ownerFilter == id) and COLORS.blue or COLORS.card end
+    S.ownerSortBtn.Text = S.ownerSorts[S.ownerSort]
+    S.ownerSearchLbl.Text = S.ownerQuery ~= "" and S.ownerQuery or "Search users"
+    clearList(S.ownerScroll)
+    local list, q = {}, S.ownerQuery:lower()
+    for _, u in ipairs(S.ownerUsers) do
+        local passF = S.ownerFilter == "all" or (S.ownerFilter == "online" and u.online) or (S.ownerFilter == "offline" and not u.online)
+        local passQ = q == "" or u.name:lower():find(q, 1, true) or u.display:lower():find(q, 1, true) or u.uid:find(q, 1, true)
+        if passF and passQ then list[#list + 1] = u end
+    end
+    table.sort(list, function(a, b)
+        if S.ownerSort == 2 and a.ago ~= b.ago then return a.ago < b.ago end
+        local x, y = a.name:lower(), b.name:lower()
+        if x ~= y then return x < y end
+        return a.uid < b.uid
+    end)
+    if #list == 0 then
+        local l = label(S.ownerScroll, #S.ownerUsers == 0 and "No users yet." or "No users match.", UDim2.new(1, -12, 0, 30), UDim2.new(), 13, COLORS.muted)
+        l.LayoutOrder = 0
+    end
+    for i, u in ipairs(list) do
+        if i > 200 then break end
+        local row = listRow(S.ownerScroll, i, 54)
+        S.avatarCircle(row, tonumber(u.uid) or 1, 10, 7, 40)
+        rowButton(row, function() S.openPlayerOptions(tonumber(u.uid) or 0, u.name, u.display) end)
+        rowText(row, u.display, UDim2.fromOffset(62, 8), UDim2.new(1, -200, 0, 20), 14, COLORS.white, true)
+        rowText(row, "@" .. u.name .. "  |  ID " .. u.uid, UDim2.fromOffset(62, 29), UDim2.new(1, -200, 0, 16), 11, COLORS.muted)
+        S.statusDot(row, u.online, S.agoText(u.ago))
+    end
+end
+
+function S.refreshOwner()
+    task.spawn(function()
+        local r = S.orbis and S.orbis.ownerAccounts(player.UserId) or { ok = false, message = "Not signed in." }
+        if not r.ok then notify(r.message or "Could not load accounts.") return end
+        local accounts = r.accounts or {}
+        local users, recent = {}, 0
+        for _, account in ipairs(accounts) do
+            local uid = tostring(account.uid or "")
+            local lastSeen = tonumber(account.lastSeen) or 0
+            local ago = math.max(0, os.time() - lastSeen)
+            local username = uid
+            pcall(function()
+                username = Players:GetNameFromUserIdAsync(tonumber(uid))
+            end)
+            local isRecent = lastSeen > 0 and ago <= 300
+            if isRecent then recent += 1 end
+            users[#users + 1] = {
+                uid = uid, name = username, display = username,
+                online = isRecent, ago = ago, premium = account.premium == true,
+            }
+        end
+        S.ownerUsers = users
+        S.ownerSummary.Text = #accounts .. " accounts  |  " .. recent .. " recently active"
+        S.renderOwner()
+    end)
+end
+
+function S.openOwnerPanel()
+    if not S.isOwner then notify("Owner only") return end
+    S.refreshOwner()
+    S.renderOwner()
+    showPage("Owner")
+end
+task.spawn(function() -- keep the list fresh while it is open
+    while gui.Parent do
+        task.wait(20)
+        if S.isOwner and currentPage == "Owner" then S.refreshOwner() end
+    end
+end)
+
 -- automatic check when the dashboard starts (runs after login)
 function S.startup()
   playSound("Home")
+  S.startPresence()
   task.spawn(function()
     local t = S.loadingToast("Checking game")
     local started = tick()
@@ -6405,18 +6748,3 @@ end)
 end
 
 S.loginGate(S.startup)
-
--- Tap the Hub avatar/name to reopen the profile switcher without restarting the dashboard.
-local profileSwitch = make("TextButton", {
-    Name = "ProfileSwitcher", Size = UDim2.fromOffset(190, 38),
-    Position = UDim2.fromOffset(340, 19), BackgroundTransparency = 1,
-    BorderSizePixel = 0, Text = "", AutoButtonColor = false, ZIndex = 9,
-}, main)
-profileSwitch.Activated:Connect(function()
-    if S.loginOpen then return end
-    playSound("Select")
-    S.loginGate(function(p)
-        S.applyProfile(p)
-        notify("Switched to " .. tostring(p.name or "profile"))
-    end)
-end)

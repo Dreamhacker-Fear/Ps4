@@ -26,7 +26,7 @@ Join the project's Discord server: [https://discord.gg/gfdjcFDVjf](https://disco
 - Regular users can save up to **5 Roblox profiles** in the dashboard.
 - The configured Owner Roblox user can save more profiles.
 - The profile picker is a horizontal, swipeable carousel: Create Account starts centered when available, saved profiles sit to its left, and the card nearest the center is enlarged to appear in the foreground.
-- Swipe horizontally to bring another profile into the center, then tap it to sign in.
+- Swipe horizontally to bring another profile into the center; the nearest card snaps into place when the swipe ends. Tap it to sign in.
 - Each profile authenticates against its Roblox User ID and has its own server-issued session.
 - The Hub display name can be renamed without changing the Roblox account username.
 - Tapping the Hub profile/avatar area reopens the profile picker.

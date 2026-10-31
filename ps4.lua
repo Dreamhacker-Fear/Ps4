@@ -6763,4 +6763,106 @@ function S.startup()
 end)
 end
 
+
+-- ===== GUI polish layer (v27): text stays inside its box, cards clip, PS4-style depth =====
+-- Everything lives on S so the main chunk stays under Luau's 200-local limit.
+S.POLISH_CLIP = true   -- set to false if some card should be allowed to draw outside its box
+S.DEBUG_LAYOUT = true  -- press F9 in the dashboard to print overlaps / overflowing text
+
+function S.polishObj(o)
+    if not o or not o.Parent or o:GetAttribute("NoPolish") then return end
+    if o:IsA("TextLabel") or o:IsA("TextButton") then
+        local s = o.Size
+        local hasHeight = s.Y.Scale > 0 or s.Y.Offset > 0
+        if hasHeight and o.AutomaticSize == Enum.AutomaticSize.None and not o.TextScaled
+            and o.TextTruncate == Enum.TextTruncate.None then
+            o.TextTruncate = Enum.TextTruncate.AtEnd -- long text ends with "..." instead of lapping out
+        end
+    elseif S.POLISH_CLIP and o:IsA("Frame") and not o:IsA("ScrollingFrame") then
+        if o.BackgroundTransparency < 1 and o.Rotation == 0 and not o.ClipsDescendants
+            and o:FindFirstChildOfClass("UICorner") then
+            o.ClipsDescendants = true -- rounded cards keep their content inside the corners
+        end
+    end
+end
+
+function S.polishScene()
+    -- soft shade behind the top icon row and the bottom edge, like the PS4 home screen
+    if not main:FindFirstChild("PolishTopShade") then
+        local top = make("Frame", {
+            Name = "PolishTopShade", Size = UDim2.new(1, 0, 0, 72), BackgroundColor3 = Color3.new(0, 0, 0),
+            BorderSizePixel = 0, ZIndex = 1, Active = false,
+        }, main)
+        make("UIGradient", { Rotation = 90, Transparency = NumberSequence.new(0.62, 1) }, top)
+        local bot = make("Frame", {
+            Name = "PolishBottomShade", Size = UDim2.new(1, 0, 0, 56), Position = UDim2.new(0, 0, 1, -56),
+            BackgroundColor3 = Color3.fromRGB(0, 10, 40), BorderSizePixel = 0, ZIndex = 1, Active = false,
+        }, main)
+        make("UIGradient", { Rotation = 90, Transparency = NumberSequence.new(1, 0.55) }, bot)
+    end
+    -- a long display name must never run into the trophy counter
+    if S.userName and not S.userName:FindFirstChild("PolishMax") then
+        make("UISizeConstraint", { Name = "PolishMax", MaxSize = Vector2.new(104, 26) }, S.userName)
+        S.userName.TextTruncate = Enum.TextTruncate.AtEnd
+    end
+end
+
+function S.polishAll()
+    for _, o in ipairs(gui:GetDescendants()) do S.polishObj(o) end
+    S.polishScene()
+end
+
+gui.DescendantAdded:Connect(function(o)
+    if o:IsA("UICorner") then
+        task.defer(S.polishObj, o.Parent) -- the corner arrives after the frame is created
+    else
+        task.defer(S.polishObj, o)
+    end
+end)
+S.polishAll()
+
+-- F9 = layout check: prints text that does not fit and text boxes that overlap each other
+function S.auditLayout()
+    local found = 0
+    local byParent = {}
+    for _, o in ipairs(gui:GetDescendants()) do
+        if (o:IsA("TextLabel") or o:IsA("TextButton")) and o.Text ~= "" and o.AbsoluteSize.X > 0 then
+            local vis, p = true, o
+            while p and p ~= gui do
+                if p:IsA("GuiObject") and not p.Visible then vis = false break end
+                p = p.Parent
+            end
+            if vis then
+                if not o.TextWrapped and o.TextBounds.X > o.AbsoluteSize.X + 2 and o.TextTruncate == Enum.TextTruncate.None then
+                    found += 1
+                    print(("[layout] overflow: %s  \"%s\""):format(o:GetFullName(), o.Text:sub(1, 30)))
+                end
+                byParent[o.Parent] = byParent[o.Parent] or {}
+                table.insert(byParent[o.Parent], o)
+            end
+        end
+    end
+    for _, list in pairs(byParent) do
+        for i = 1, #list do
+            for j = i + 1, #list do
+                local a, b = list[i], list[j]
+                local ap, as, bp, bs = a.AbsolutePosition, a.AbsoluteSize, b.AbsolutePosition, b.AbsoluteSize
+                local ox = math.min(ap.X + as.X, bp.X + bs.X) - math.max(ap.X, bp.X)
+                local oy = math.min(ap.Y + as.Y, bp.Y + bs.Y) - math.max(ap.Y, bp.Y)
+                if ox > 6 and oy > 6 and a.ZIndex == b.ZIndex then
+                    found += 1
+                    print(("[layout] overlap: \"%s\" <-> \"%s\"  (%s)"):format(a.Text:sub(1, 20), b.Text:sub(1, 20), a.Parent:GetFullName()))
+                end
+            end
+        end
+    end
+    print(("[layout] check done, %d issue(s)"):format(found))
+end
+if S.DEBUG_LAYOUT then
+    UserInputService.InputBegan:Connect(function(input, processed)
+        if not processed and input.KeyCode == Enum.KeyCode.F9 then S.auditLayout() end
+    end)
+end
+
+
 S.loginGate(S.startup)

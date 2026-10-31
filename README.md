@@ -43,7 +43,7 @@ Do not share passcodes, session tokens, Discord bot tokens, signing secrets, or 
 
 ## Cloudflare Worker setup
 
-The Worker uses the Durable Object binding and migration declared in `wrangler.jsonc`.
+The Worker uses the Durable Object binding and migration declared in `wrangler.jsonc`. The Owner feature branch has its own Cloudflare Workers Builds preview trigger; preview URLs are enabled so testing the feature branch does not replace the live Worker.
 
 1. Install Wrangler and authenticate with the Cloudflare account that owns the Worker.
 2. Set the required secrets using Wrangler (never commit secret values):

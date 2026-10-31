@@ -5858,21 +5858,49 @@ function S.loginGate(onDone)
                 nm.TextXAlignment = Enum.TextXAlignment.Center
                 tile.Activated:Connect(function()
                     playSound("Select")
-                    S.openKeyboard("Choose your name", player.DisplayName, {
-                        hint = "Pick the name shown on your profile.",
-                        onDone = function(text)
-                            text = text:gsub("^%s+", ""):gsub("%s+$", "")
-                            if text == "" then text = player.DisplayName end
-                            text = text:sub(1, 16)
-                            local profileLimit = tostring(player.UserId) == "8407673016" and math.huge or 5
-                            if #S.login.profiles >= profileLimit then
-                                notify("You have reached your profile limit")
-                                return
-                            end
-                            local prof = { name = text, userId = player.UserId, profileId = HttpService:GenerateGUID(false) }
-                            table.insert(S.login.profiles, prof)
-                            S.saveLogin()
-                            pickProfile(prof)
+                    local profileLimit = tostring(player.UserId) == "8407673016" and math.huge or 5
+                    if #S.login.profiles >= profileLimit then
+                        notify("You have reached your profile limit")
+                        return
+                    end
+                    S.openKeyboard("Roblox username", player.Name, {
+                        hint = "Enter the Roblox username for this account.",
+                        onDone = function(username)
+                            username = tostring(username or ""):gsub("^%s+", ""):gsub("%s+$", ""):gsub("^@", "")
+                            if username == "" then notify("Enter a Roblox username"); return end
+                            task.spawn(function()
+                                local ok, userId = pcall(function()
+                                    return Players:GetUserIdFromNameAsync(username)
+                                end)
+                                if not ok or not tonumber(userId) then
+                                    notify("Could not find that Roblox username")
+                                    return
+                                end
+                                userId = tonumber(userId)
+                                for _, existing in ipairs(S.login.profiles) do
+                                    if tonumber(existing.userId) == userId then
+                                        notify("That Roblox account is already saved")
+                                        pickProfile(existing)
+                                        return
+                                    end
+                                end
+                                local canonicalName = username
+                                pcall(function() canonicalName = Players:GetNameFromUserIdAsync(userId) end)
+                                S.openKeyboard("Hub display name", canonicalName, {
+                                    hint = "Choose the name shown in your Hub. This does not rename Roblox.",
+                                    onDone = function(displayName)
+                                        displayName = tostring(displayName or ""):gsub("^%s+", ""):gsub("%s+$", ""):sub(1, 16)
+                                        if displayName == "" then displayName = canonicalName:sub(1, 16) end
+                                        local prof = {
+                                            name = displayName, username = canonicalName, userId = userId,
+                                            profileId = HttpService:GenerateGUID(false)
+                                        }
+                                        table.insert(S.login.profiles, prof)
+                                        S.saveLogin()
+                                        pickProfile(prof)
+                                    end,
+                                })
+                            end)
                         end,
                     })
                 end)

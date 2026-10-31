@@ -786,7 +786,7 @@ local currentPage = nil
 local panelOpen = false
 
 -- ===== Support link, PS4-style popups (loading + error) and the safety scan =====
-S.DISCORD = "https://discord.gg/9aefrXgRjf"
+S.DISCORD = "https://discord.gg/gfdjcFDVjf"
 
 function S.popupBase(w, h)
     local old = main:FindFirstChild("PS4Popup")
@@ -5659,7 +5659,7 @@ S.KEY = {
 }
 -- Orbis Auth client (remote module). Host orbis_client.lua in your repo; later login updates only need an edit there.
 -- Tip: use a commit or tag instead of "main" so an accidental edit can't change everyone's login.
-S.ORBIS_URL = "https://raw.githubusercontent.com/Dreamhacker-Fear/Ps4/main/orbis_client.lua"
+S.ORBIS_URL = "https://raw.githubusercontent.com/Dreamhacker-Fear/Ps4/feature/owner-system/orbis_client.lua"
 S.LOGIN_FILE = "ps4_login.json"
 S.login = { profiles = {} }
 

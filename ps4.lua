@@ -5775,56 +5775,6 @@ function S.loginGate(onDone)
         onDone(p)
     end
 
-
-    local function refreshAccountEntitlements(uid)
-        local r = S.orbis.accounts(uid)
-        if r and r.ok then
-            S.login.premium = r.premium == true
-            S.login.accountLimit = r.accountLimit
-            S.login.accountCount = #(r.accounts or {})
-        end
-        return r
-    end
-
-    local function ensureOrbisAccount(p, done)
-        if p.accountId then done(); return end
-        local r = S.orbis.register(p.name, p.userId)
-        if r and r.ok and r.account then
-            p.accountId = r.account.id
-            S.saveLogin()
-            refreshAccountEntitlements(p.userId)
-            done()
-            return
-        end
-        if not r or r.reason == "net" or r.reason == "norequest" or r.reason == "server_error" then
-            notify("Signed in. Orbis account setup will retry when the account server is available.")
-            done()
-            return
-        end
-        local message = r.message or "Could not create your Orbis account."
-        if string.find(string.lower(message), "taken", 1, true) or string.find(string.lower(message), "usernames", 1, true) then
-            S.showDialog(message, nil, "Choose a different Orbis username.", {
-                { "Choose Username", function()
-                    S.openKeyboard("Choose Orbis username", p.name, {
-                        hint = "3-20 letters, numbers or underscores.",
-                        onDone = function(text)
-                            text = tostring(text or ""):gsub("^%s+", ""):gsub("%s+$", "")
-                            if #text < 3 or #text > 20 or not text:match("^[A-Za-z0-9_]+$") then
-                                notify("Use 3-20 letters, numbers or underscores.")
-                                return
-                            end
-                            p.name = text
-                            ensureOrbisAccount(p, done)
-                        end,
-                    })
-                end },
-                { "Cancel" },
-            })
-        else
-            S.showDialog(message)
-        end
-    end
-
     local showPicker, showPasscode
 
     local editMode = false
@@ -5835,11 +5785,7 @@ function S.loginGate(onDone)
                 for idx, q in ipairs(S.login.profiles) do
                     if q == p then table.remove(S.login.profiles, idx) break end
                 end
-                local stillLinked = false
-                for _, q in ipairs(S.login.profiles) do
-                    if tostring(q.userId) == tostring(p.userId) then stillLinked = true break end
-                end
-                if S.orbis and not stillLinked then S.orbis.clear(p.userId) end
+                if S.orbis then S.orbis.clear(p.userId) end
                 S.saveLogin()
                 notify("Profile removed")
                 if alive then showPicker() end
@@ -5858,8 +5804,7 @@ function S.loginGate(onDone)
             ld.close()
             if not alive then return end
             if r.ok then
-                refreshAccountEntitlements(p.userId)
-                ensureOrbisAccount(p, function() finish(p) end)
+                finish(p)
             elseif r.reason == "session_invalid" or r.reason == "none" then
                 showPasscode(p, r.message ~= "" and r.message or nil) -- expired: ask for a new passcode
             else
@@ -5874,8 +5819,7 @@ function S.loginGate(onDone)
         centered("Welcome Back to PlayStation\194\174", 84, 20)
         centered("Who is playing?", 118, 13, COLORS.white)
         local entries = {}
-        local accountCount = math.max(#S.login.profiles, S.login.accountCount or 0)
-        if S.login.premium or accountCount < 3 then table.insert(entries, { new = true }) end
+        if #S.login.profiles < 4 then table.insert(entries, { new = true }) end
         for _, p in ipairs(S.login.profiles) do table.insert(entries, { profile = p }) end
         local tw, gap = 114, 14
         local x0 = (W - (#entries * tw + (#entries - 1) * gap)) / 2
@@ -5894,16 +5838,21 @@ function S.loginGate(onDone)
                 nm.TextXAlignment = Enum.TextXAlignment.Center
                 tile.Activated:Connect(function()
                     playSound("Select")
-                    S.openKeyboard("Choose Orbis username", player.Name, {
-                        hint = "3-20 letters, numbers or underscores.",
+                    S.openKeyboard("Choose your name", player.DisplayName, {
+                        hint = "Pick the name shown on your profile.",
                         onDone = function(text)
-                            text = tostring(text or ""):gsub("^%s+", ""):gsub("%s+$", "")
-                            if #text < 3 or #text > 20 or not text:match("^[A-Za-z0-9_]+$") then
-                                notify("Use 3-20 letters, numbers or underscores.")
-                                return
+                            text = text:gsub("^%s+", ""):gsub("%s+$", "")
+                            if text == "" then text = player.DisplayName end
+                            text = text:sub(1, 16)
+                            local prof
+                            for _, p in ipairs(S.login.profiles) do
+                                if p.userId == player.UserId then prof = p end
                             end
-                            local prof = { name = text, userId = player.UserId }
-                            table.insert(S.login.profiles, prof)
+                            if prof then prof.name = text
+                            else
+                                prof = { name = text, userId = player.UserId }
+                                table.insert(S.login.profiles, prof)
+                            end
                             S.saveLogin()
                             pickProfile(prof)
                         end,
@@ -6043,7 +5992,7 @@ function S.loginGate(onDone)
                 local r = S.orbis.verify(code, p.userId) -- POST /verify, saves the session token on success
                 if not alive then return end
                 if r.ok then
-                    ensureOrbisAccount(p, function() finish(p) end)
+                    finish(p)
                     return
                 end
                 code = ""
@@ -6153,15 +6102,7 @@ function S.loginGate(onDone)
             local mod, why = S.loadOrbis()
             ld.close()
             if not alive then return end
-            if mod then
-                if S.orbis.load(player.UserId) then
-                    local resumed = S.orbis.resume(player.UserId)
-                    if resumed and resumed.ok then refreshAccountEntitlements(player.UserId) end
-                end
-                showPicker()
-            else
-                showUnavailable(why)
-            end
+            if mod then showPicker() else showUnavailable(why) end
         end)
     end
     S.startGate()

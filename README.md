@@ -16,10 +16,18 @@ Join the project's Discord server: [https://discord.gg/gfdjcFDVjf](https://disco
 
 ## Project files
 
-- `ps4.lua` — dashboard interface, profile picker, account switching within the dashboard, and Owner panel UI.
+- `ps4.lua` — refreshed PS4-style dashboard UI from Use_this.lua, including Home, ScriptBlox Store, Library, browser, Settings, themes, profile picker, and Owner panel.
 - `orbis_client.lua` — client-side requests and locally saved authentication sessions.
 - `orbis-auth-worker.js` — Cloudflare Worker API, passcode verification, session validation, and server-side Owner/Premium controls.
 - `wrangler.jsonc` — Cloudflare Worker and Durable Object configuration.
+
+## Refreshed dashboard UI
+
+The feature/owner-system branch now uses the UI from the separate Dreamhacker-Fear/What-Claude-gave-me repository's Use_this.lua, adapted to the existing Orbis Worker rather than copied blindly. The root ps4.lua and readable source/ps4.lua are kept byte-for-byte identical.
+
+The refreshed interface includes the PS4-style Home, ScriptBlox Store, Library, browser, Settings, themes, notifications, profile picker, and Owner panel. The Owner panel uses the supported account-list and Premium endpoints. Recently active is calculated from the last-seen timestamp; it is not a live presence signal. Script Friends endpoints and Discord News posting are disabled/pending server-side support.
+
+The stable main branch and the existing loadstring are unchanged. The refreshed version is only on feature/owner-system until the pull request is reviewed and merged.
 
 ## Current profile behavior
 
@@ -54,8 +62,9 @@ The `/setup` route is disabled by default in the Worker. Only enable it temporar
 
 ## Owner and Premium features
 
-- The Owner panel lists accounts that have signed in to this Worker, with Roblox usernames resolved for display.
+- The refreshed Owner panel lists accounts that have signed in to this Worker, resolves Roblox usernames for display, and marks accounts recently seen within five minutes as recently active (not guaranteed live-online presence).
 - The Owner can grant or revoke Premium for registered accounts; the Owner account itself is always Premium.
+- Owner account listing, Premium changes, and visit logging use the existing /owner/* Worker routes.
 - Owner actions are recorded in Durable Object storage and retained for up to 30 days.
 - Owner access is checked server-side using the session token and configured Owner Roblox User ID (`8407673016`). A client-side flag alone does not grant Owner access.
 
@@ -65,9 +74,11 @@ The `/setup` route is disabled by default in the Worker. Only enable it temporar
 - GitHub Actions checks are only available when workflows are configured and triggered. A missing workflow run is not a passing build.
 - A successful JavaScript syntax check does not prove the Luau UI works in the Roblox runtime.
 - Cloudflare preview builds are not a substitute for a live Durable Object runtime test. The Owner-enabled Worker is deployed to production `ps4`, but successful syntax/deployment checks do not prove that Roblox login and every Owner action work end to end.
-- The public client source contains Discord webhook URLs for the News form. Treat those URLs as exposed: rotate them in Discord and move replacements into Worker secrets before relying on those submissions.
+- The refreshed client does not contain the old Discord webhook URLs. News posting is disabled until secure server-side webhook handling is configured.
+- The Script Friends view is a UI placeholder for now; the current Worker does not implement friend search/request endpoints. Roblox Friends and local party display are separate UI views.
+- The refreshed Store fetches public ScriptBlox catalogue data. Its script runner executes downloaded Lua code, so only use code you understand and trust; the built-in string scan is not a security guarantee.
 - Owner UI references are forward-declared before callbacks use them, so Lua resolves them to the intended local controls and cache.
-- The feature-branch dashboard loads its matching `orbis_client.lua`, including the Owner API methods.
+- The feature-branch dashboard loads its matching orbis_client.lua, including the Owner API methods and a compatibility response for the refreshed UI. The client source URL is pinned to feature/owner-system while the refresh is tested.
 - Owner API requests are forwarded to their matching Durable Object routes; they are not treated as ordinary session checks.
 - The Worker validates the Owner session and configured Roblox User ID on every Owner-only operation.
 - Before merging the client changes, test profile creation, profile switching, passcode login, session resume, and Owner-only endpoints in Roblox. If any production login flow fails, roll back the Worker to the previous deployment version while investigating.

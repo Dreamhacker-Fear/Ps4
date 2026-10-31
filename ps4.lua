@@ -1348,7 +1348,7 @@ function S.refreshOwnerAccounts()
         if query == "" or username:lower():find(query, 1, true) or uid:find(query, 1, true) then
             shown += 1
             local row = listRow(ownerScroll, shown, 58)
-            rowButton(row, function()
+            if uid ~= "8407673016" then rowButton(row, function()
                 local action = account.premium and "Revoke Premium" or "Grant Premium"
                 openPanel(action .. "?", {
                     { action, function()
@@ -1364,10 +1364,10 @@ function S.refreshOwnerAccounts()
                     end },
                     { "Cancel" },
                 })
-            end)
+            end) end
             rowText(row, username .. "  (@" .. username .. ")", UDim2.fromOffset(14, 6), UDim2.new(1, -170, 0, 22), 13, COLORS.white, true)
             rowText(row, "User ID: " .. uid .. "  •  " .. (account.premium and "PREMIUM" or "Standard"), UDim2.fromOffset(14, 30), UDim2.new(1, -170, 0, 18), 11, account.premium and Color3.fromRGB(255, 205, 80) or COLORS.muted)
-            label(row, account.premium and "REVOKE" or "GRANT", UDim2.new(0, 90, 1, 0), UDim2.new(1, -100, 0, 0), 11, account.premium and Color3.fromRGB(255, 150, 150) or Color3.fromRGB(120, 220, 160), true)
+            label(row, uid == "8407673016" and "OWNER" or (account.premium and "REVOKE" or "GRANT"), UDim2.new(0, 90, 1, 0), UDim2.new(1, -100, 0, 0), 11, uid == "8407673016" and Color3.fromRGB(255, 205, 80) or (account.premium and Color3.fromRGB(255, 150, 150) or Color3.fromRGB(120, 220, 160)), true)
         end
     end
     if shown == 0 then

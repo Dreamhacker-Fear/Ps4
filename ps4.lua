@@ -1365,7 +1365,7 @@ function S.refreshOwnerAccounts()
                     { "Cancel" },
                 })
             end) end
-            rowText(row, username .. "  (@" .. username .. ")", UDim2.fromOffset(14, 6), UDim2.new(1, -170, 0, 22), 13, COLORS.white, true)
+            rowText(row, "@" .. username, UDim2.fromOffset(14, 6), UDim2.new(1, -170, 0, 22), 13, COLORS.white, true)
             rowText(row, "User ID: " .. uid .. "  •  " .. (account.premium and "PREMIUM" or "Standard"), UDim2.fromOffset(14, 30), UDim2.new(1, -170, 0, 18), 11, account.premium and Color3.fromRGB(255, 205, 80) or COLORS.muted)
             label(row, uid == "8407673016" and "OWNER" or (account.premium and "REVOKE" or "GRANT"), UDim2.new(0, 90, 1, 0), UDim2.new(1, -100, 0, 0), 11, uid == "8407673016" and Color3.fromRGB(255, 205, 80) or (account.premium and Color3.fromRGB(255, 150, 150) or Color3.fromRGB(120, 220, 160)), true)
         end
@@ -5123,7 +5123,7 @@ S.SETTINGS = {
             { type = "info", text = "Display Name", value = player.DisplayName },
             { type = "info", text = "Username", value = "@" .. player.Name },
             { type = "info", text = "Account Age", value = player.AccountAge .. " days" },
-            { type = "info", text = "Membership", value = player.MembershipType.Name },
+            { type = "info", text = "Membership", value = S.isOwner and "Owner" or (S.isPremium and "Premium" or player.MembershipType.Name) },
             { type = "action", text = "View Account Details", onclick = function() S.showAccount() end },
         }
     end },

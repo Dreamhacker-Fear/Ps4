@@ -1223,6 +1223,7 @@ local messagesPage = makePage("Messages", "Messages")
 S.notifPage = makePage("Notifications", "Notifications")
 S.trophyPage = makePage("Trophies", "Trophies")
 local editorPage = makePage("Editor", "Code Editor")
+local ownerPage = makePage("Owner", "Owner Panel")
 S.slPage = makePage("SettingsList", "")
 S.browserPage = makePage("Browser", "Internet Browser")
 
@@ -1337,6 +1338,70 @@ local function rowButton(row, fn)
     return b
 end
 
+function S.refreshOwnerAccounts()
+    clearList(ownerScroll)
+    local query = tostring(ownerSearch.Text or ""):lower():gsub("^@", "")
+    local shown = 0
+    for i, account in ipairs(ownerAccountsCache) do
+        local uid = tostring(account.uid or "")
+        local username = account.username or uid
+        if query == "" or username:lower():find(query, 1, true) or uid:find(query, 1, true) then
+            shown += 1
+            local row = listRow(ownerScroll, shown, 58)
+            rowButton(row, function()
+                local action = account.premium and "Revoke Premium" or "Grant Premium"
+                openPanel(action .. "?", {
+                    { action, function()
+                        task.spawn(function()
+                            local result = S.orbis.setPremium(player.UserId, uid, not account.premium)
+                            if result and result.ok then
+                                notify((result.premium and "Premium granted to " or "Premium revoked for ") .. username)
+                                S.openOwnerPanel()
+                            else
+                                S.showDialog(result and result.message or "Could not update Premium.")
+                            end
+                        end)
+                    end },
+                    { "Cancel" },
+                })
+            end)
+            rowText(row, username .. "  (@" .. username .. ")", UDim2.fromOffset(14, 6), UDim2.new(1, -170, 0, 22), 13, COLORS.white, true)
+            rowText(row, "User ID: " .. uid .. "  •  " .. (account.premium and "PREMIUM" or "Standard"), UDim2.fromOffset(14, 30), UDim2.new(1, -170, 0, 18), 11, account.premium and Color3.fromRGB(255, 205, 80) or COLORS.muted)
+            label(row, account.premium and "REVOKE" or "GRANT", UDim2.new(0, 90, 1, 0), UDim2.new(1, -100, 0, 0), 11, account.premium and Color3.fromRGB(255, 150, 150) or Color3.fromRGB(120, 220, 160), true)
+        end
+    end
+    if shown == 0 then
+        local empty = label(ownerScroll, "No matching accounts found.", UDim2.new(1, -12, 0, 30), UDim2.new(), 13, COLORS.muted)
+        empty.LayoutOrder = 1
+    end
+end
+
+function S.openOwnerPanel()
+    if not S.isOwner then notify("Owner access required"); return end
+    showPage("Owner")
+    clearList(ownerScroll)
+    local loading = label(ownerScroll, "Loading registered accounts...", UDim2.new(1, -12, 0, 30), UDim2.new(), 13, COLORS.muted)
+    loading.LayoutOrder = 1
+    task.spawn(function()
+        if S.orbis and S.orbis.ownerVisit then S.orbis.ownerVisit(player.UserId) end
+        local result = S.orbis and S.orbis.ownerAccounts(player.UserId)
+        if not ownerPage.Visible then return end
+        if not result or not result.ok then
+            loading.Text = result and result.message or "Could not load Owner accounts."
+            return
+        end
+        ownerAccountsCache = result.accounts or {}
+        for _, account in ipairs(ownerAccountsCache) do
+            local ok, username = pcall(function() return Players:GetNameFromUserIdAsync(tonumber(account.uid)) end)
+            account.username = ok and username or ("User " .. tostring(account.uid))
+        end
+        if loading.Parent then loading:Destroy() end
+        S.refreshOwnerAccounts()
+    end)
+end
+
+ownerSearch.FocusLost:Connect(function() S.refreshOwnerAccounts() end)
+
 function S.openPlayerOptions(userId, username, display)
     openPanel(shortText(display, 22), {
         { "Copy Username", function() copyText(username, "Username") end },
@@ -1369,6 +1434,17 @@ S.partyScroll = makeListScroll(S.partyPage)
 local notifScroll = makeListScroll(S.notifPage)
 S.trophyScroll = makeListScroll(S.trophyPage)
 local msgScroll = makeListScroll(messagesPage, 84, 272)
+local ownerSearch = make("TextBox", {
+    Size = UDim2.new(1, -80, 0, 30), Position = UDim2.fromOffset(40, 78),
+    BackgroundColor3 = COLORS.card, BackgroundTransparency = 0.25, BorderSizePixel = 0,
+    Text = "", PlaceholderText = "Search by Roblox @username or User ID", PlaceholderColor3 = COLORS.muted,
+    TextColor3 = COLORS.white, Font = Enum.Font.Gotham, TextSize = 13,
+    TextXAlignment = Enum.TextXAlignment.Left, ClearTextOnFocus = false,
+}, ownerPage)
+round(ownerSearch, 5)
+make("UIPadding", { PaddingLeft = UDim.new(0, 10) }, ownerSearch)
+local ownerScroll = makeListScroll(ownerPage, 118, H - 188)
+local ownerAccountsCache = {}
 
 local TROPHIES = {
     { id = "first_dl", name = "First Download", desc = "Download your first script", grade = "Bronze" },
@@ -5014,6 +5090,13 @@ S.SETTINGS = {
             end },
         }
     end },
+    { id = "Owner", icon = "👑", build = function()
+        return {
+            { type = "info", text = "Owner User ID", value = "8407673016" },
+            { type = "info", text = "Access", value = S.isOwner and "Verified Owner" or "Owner only" },
+            { type = "action", text = "Open Owner Panel", onclick = function() S.openOwnerPanel() end },
+        }
+    end },
     { id = "Account Management", icon = "♙", build = function()
         return {
             { type = "info", text = "Display Name", value = player.DisplayName },
@@ -5057,6 +5140,7 @@ S.SETTINGS = {
 
 function S.openSetting(def)
     if not def then return end
+    if def.id == "Owner" and not S.isOwner then notify("Owner access required"); return end
     if def.open then
         S.run(def.open)
         return
@@ -5644,8 +5728,11 @@ function S.loginGate(onDone)
         l.TextWrapped = false
     end
 
-    local function finish(p)
+    local function finish(p, authResult)
         if not alive then return end
+        S.isOwner = authResult and authResult.isOwner == true or false
+        S.isPremium = authResult and authResult.premium == true or S.isOwner
+        if S.buildSettingsGrid then S.buildSettingsGrid() end
         alive = false
         S.saveLogin()
         S.applyProfile(p)
@@ -5685,7 +5772,7 @@ function S.loginGate(onDone)
             ld.close()
             if not alive then return end
             if r.ok then
-                finish(p)
+                finish(p, r)
             elseif r.reason == "session_invalid" or r.reason == "none" then
                 showPasscode(p, r.message ~= "" and r.message or nil) -- expired: ask for a new passcode
             else
@@ -5873,7 +5960,7 @@ function S.loginGate(onDone)
                 local r = S.orbis.verify(code, p.userId) -- POST /verify, saves the session token on success
                 if not alive then return end
                 if r.ok then
-                    finish(p)
+                    finish(p, r)
                     return
                 end
                 code = ""

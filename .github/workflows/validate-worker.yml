@@ -5,9 +5,11 @@ on:
     branches:
       - main
       - feature/owner-system
+      - feature/ps4-ui-reference-owner-system
   pull_request:
     branches:
       - main
+      - feature/owner-system
 
 permissions:
   contents: read
@@ -27,6 +29,9 @@ jobs:
 
       - name: Check Worker JavaScript syntax
         run: node --check orbis-auth-worker.js
+      - name: Check dashboard source parity and visual adaptation markers
+        run: |
+          node -e "const fs=require('fs'); const a=fs.readFileSync('ps4.lua','utf8'); const b=fs.readFileSync('source/ps4.lua','utf8'); if(a!==b) throw new Error('ps4.lua and source/ps4.lua differ'); for(const marker of ['PS4 UI reference adaptation','SystemRail','WallpaperBloom']) if(!a.includes(marker)) throw new Error('Missing UI marker: '+marker); console.log('Dashboard source copies match and visual adaptation markers are present.');"
 
       - name: Validate Wrangler configuration and bundle
         run: npx --yes wrangler@4 deploy --dry-run

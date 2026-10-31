@@ -732,9 +732,9 @@ S.bg = make("Frame", {
 S.bgGradient = make("UIGradient", {
     Rotation = 100,
     Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(10, 76, 178)),
-        ColorSequenceKeypoint.new(0.55, Color3.fromRGB(6, 62, 160)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(3, 40, 118)),
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(5, 48, 112)),
+        ColorSequenceKeypoint.new(0.42, Color3.fromRGB(4, 37, 91)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(2, 20, 55)),
     }),
 }, S.bg)
 
@@ -778,6 +778,52 @@ for i = 1, 16 do
         { Position = UDim2.fromScale(x + ((i % 2 == 0) and 0.04 or -0.04), y - 0.07) }
     ):Play()
 end
+
+-- ===== PS4 UI reference adaptation =====
+-- Inspired by the clean system rail, deep-blue wallpaper and crisp focus treatment
+-- in d4v1-sudo/Ps4-UI. Rebuilt with native Roblox UI objects; no web assets are loaded.
+S.systemRail = make("Frame", {
+    Name = "SystemRail",
+    Size = UDim2.new(1, -40, 0, 1),
+    Position = UDim2.fromOffset(20, 66),
+    BackgroundColor3 = Color3.fromRGB(214, 231, 255),
+    BackgroundTransparency = 0.82,
+    BorderSizePixel = 0,
+    ZIndex = 2,
+}, main)
+
+S.homeMark = make("Frame", {
+    Name = "HomeMark",
+    Size = UDim2.fromOffset(42, 28),
+    Position = UDim2.fromOffset(294, 21),
+    BackgroundTransparency = 1,
+    BorderSizePixel = 0,
+    ZIndex = 5,
+}, main)
+local homeMarkText = label(S.homeMark, "PS4", UDim2.fromOffset(42, 28), UDim2.fromOffset(0, 0), 13, COLORS.white, true)
+homeMarkText.TextWrapped = false
+homeMarkText.TextXAlignment = Enum.TextXAlignment.Center
+
+-- A restrained blue bloom gives the wallpaper depth without covering tiles or controls.
+S.wallpaperBloom = make("Frame", {
+    Name = "WallpaperBloom",
+    AnchorPoint = Vector2.new(0.5, 0.5),
+    Position = UDim2.new(0.58, 0, 0.48, 0),
+    Size = UDim2.fromOffset(460, 250),
+    BackgroundColor3 = Color3.fromRGB(37, 119, 220),
+    BackgroundTransparency = 0.91,
+    BorderSizePixel = 0,
+    ZIndex = 0,
+}, S.bg)
+round(S.wallpaperBloom, 125)
+make("UIGradient", {
+    Rotation = 0,
+    Transparency = NumberSequence.new({
+        NumberSequenceKeypoint.new(0, 0.25),
+        NumberSequenceKeypoint.new(0.5, 0.02),
+        NumberSequenceKeypoint.new(1, 0.25),
+    }),
+}, S.wallpaperBloom)
 
 -- PS4 notification icon: blue square, full toast height, flush left, white symbols in a 2x2 grid
 function S.toastIcon(toast)
@@ -2762,10 +2808,11 @@ local focusIndex = 2 -- start on the first slot so the Store tile sits on its le
 S.halo = make("Frame", {
     Size = UDim2.fromOffset(FOCUS + 18, FOCUS + 18),
     Position = UDim2.fromOffset(TILE_X - 9, TILE_Y - 9),
-    BackgroundColor3 = COLORS.white,
-    BackgroundTransparency = 0.9,
+    BackgroundColor3 = Color3.fromRGB(66, 155, 255),
+    BackgroundTransparency = 0.88,
     BorderSizePixel = 0, ZIndex = 3,
 }, main)
+round(S.halo, 8)
 S.halo.Visible = false
 TweenService:Create(S.halo,
     TweenInfo.new(1.3, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true),
@@ -2774,7 +2821,7 @@ TweenService:Create(S.halo,
 S.focusBar = make("Frame", {
     Size = UDim2.fromOffset(FOCUS, S.BAR + 2),
     Position = UDim2.fromOffset(TILE_X, TILE_Y + FOCUS - 2),
-    BackgroundColor3 = Color3.fromRGB(40, 104, 206),
+    BackgroundColor3 = Color3.fromRGB(0, 112, 209),
     BackgroundTransparency = 0,
     BorderSizePixel = 0, ZIndex = 4,
 }, main)
@@ -3066,15 +3113,19 @@ function S.layoutTiles(animate)
         elseif isFocus then x = TILE_X
         else x = TILE_X + FOCUS + GAP + (i - focusIndex - 1) * (BASE + GAP) end
         tileStrokes[i].Color = COLORS.white
+        tileStrokes[i].Transparency = isFocus and 0.04 or 0.72
         local gs = UDim2.fromOffset(size, size)
         local gp = UDim2.fromOffset(x, TILE_Y)
         if animate then
             tween(tile, 0.2, { Size = gs, Position = gp })
-            tween(tileStrokes[i], 0.2, { Thickness = isFocus and 2 or 0 })
+            tween(tileStrokes[i], 0.2, {
+                Thickness = isFocus and 2.2 or 1,
+                Transparency = isFocus and 0.04 or 0.72,
+            })
         else
             tile.Size = gs
             tile.Position = gp
-            tileStrokes[i].Thickness = isFocus and 2 or 0
+            tileStrokes[i].Thickness = isFocus and 2.2 or 1
         end
     end
 end

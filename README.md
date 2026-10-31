@@ -87,3 +87,9 @@ The `/setup` route is disabled by default in the Worker. Only enable it temporar
 ## Cloudflare preview build note
 
 Both `main` and `feature/owner-system` Wrangler configurations include the `PSN_USERS` entry under `previews.kv_namespaces`, using the preview namespace ID requested by the Cloudflare build log. This is preview-only; the feature branch Worker continues to use the `AUTH` Durable Object for its current authentication flow. The preview mapping does not change the production Worker deployment or the Roblox loadstring.
+
+## PS4 UI visual reference adaptation
+
+The dashboard's visual polish also takes inspiration from [d4v1-sudo/Ps4-UI](https://github.com/d4v1-sudo/Ps4-UI): its compact system navigation, deep-blue wallpaper, and clear selected-item treatment. These details have been independently rebuilt with native Roblox/Luau UI elements.
+
+No HTML, CSS, JavaScript, fonts, sound files, or game artwork from that project are bundled here. The upstream project is MIT-licensed; see its [LICENSE](https://github.com/d4v1-sudo/Ps4-UI/blob/master/LICENSE) and [README](https://github.com/d4v1-sudo/Ps4-UI).

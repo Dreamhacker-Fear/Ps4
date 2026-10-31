@@ -72,3 +72,7 @@ The `/setup` route is disabled by default in the Worker. Only enable it temporar
 - The Worker validates the Owner session and configured Roblox User ID on every Owner-only operation.
 - Before merging the client changes, test profile creation, profile switching, passcode login, session resume, and Owner-only endpoints in Roblox. If any production login flow fails, roll back the Worker to the previous deployment version while investigating.
 - Changes on `feature/owner-system` are proposed through [PR #2](https://github.com/Dreamhacker-Fear/Ps4/pull/2). The default `main` branch is not changed until that pull request is merged.
+
+## Cloudflare preview build note
+
+The stable `main` branch Wrangler configuration now includes the `PSN_USERS` entry under `previews.kv_namespaces`, using the preview namespace ID requested by the Cloudflare build log. This is preview-only; the feature branch Worker continues to use the `AUTH` Durable Object for its current authentication flow. The preview mapping does not change the production Worker deployment or the Roblox loadstring.

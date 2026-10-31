@@ -1378,6 +1378,8 @@ end
 
 function S.openOwnerPanel()
     if not S.isOwner then notify("Owner access required"); return end
+    unlockTrophy("owner_visit")
+    notify("Owner access verified")
     showPage("Owner")
     clearList(ownerScroll)
     local loading = label(ownerScroll, "Loading registered accounts...", UDim2.new(1, -12, 0, 30), UDim2.new(), 13, COLORS.muted)
@@ -1457,6 +1459,7 @@ local TROPHIES = {
     { id = "themer", name = "Interior Designer", desc = "Change the theme", grade = "Silver" },
     { id = "coder", name = "Developer", desc = "Save your own script", grade = "Silver" },
     { id = "full", name = "Collector", desc = "Fill all library slots", grade = "Gold" },
+    { id = "owner_visit", name = "Owner Visited", desc = "Open the verified Owner Panel", grade = "Gold" },
     { id = "platinum", name = "Platinum", desc = "Earn every other trophy", grade = "Platinum" },
 }
 

@@ -59,6 +59,8 @@ const MSG = {
   proof_missing: "Add the phrase from your /psn message to the About section of your Roblox profile, then try again.",
   ownership_unavailable: "Could not check your Roblox profile right now. Try again in a moment.",
   session_invalid: "Your session expired. Run /psn in Discord for a new passcode.",
+  owner_required: "Owner access is required.",
+  account_not_found: "That account has not signed in yet.",
   bad_request: "That request was not valid.",
   server_error: "The login server had a problem. Try again in a moment.",
 };
@@ -257,7 +259,7 @@ export class AuthState {
       const account = await txn.get(`acct:${uid}`) || { uid, firstSeen: t, premium: false };
       account.lastSeen = t;
       await txn.put(`acct:${uid}`, account);
-      return { ok: true, token, exp: t + SESSION_TTL };
+      return { ok: true, token, exp: t + SESSION_TTL, isOwner: uid === OWNER_UID, premium: uid === OWNER_UID || account.premium === true };
     });
     if (out.ok) await this.ensureAlarm();
     return out;

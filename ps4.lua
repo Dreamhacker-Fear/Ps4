@@ -5768,13 +5768,32 @@ function S.loginGate(onDone)
 
     local editMode = false
 
+    local function renameProfile(p)
+        S.openKeyboard("Rename profile", p.name or player.DisplayName, {
+            hint = "Choose the name shown in your Hub profile.",
+            onDone = function(text)
+                text = tostring(text or ""):gsub("^%s+", ""):gsub("%s+$", ""):sub(1, 16)
+                if text == "" then text = player.DisplayName end
+                p.name = text
+                S.saveLogin()
+                if S.profile == p then S.applyProfile(p) end
+                notify("Profile name updated")
+                if alive then showPicker() end
+            end,
+        })
+    end
+
     local function confirmDelete(p)
         S.showDialog('Delete the profile "' .. p.name .. '"?', nil, "Its saved login is removed too.", {
             { "Delete", function()
                 for idx, q in ipairs(S.login.profiles) do
                     if q == p then table.remove(S.login.profiles, idx) break end
                 end
-                if S.orbis then S.orbis.clear(p.userId) end
+                local stillUsed = false
+                for _, remaining in ipairs(S.login.profiles) do
+                    if tostring(remaining.userId) == tostring(p.userId) then stillUsed = true break end
+                end
+                if not stillUsed and S.orbis then S.orbis.clear(p.userId) end
                 S.saveLogin()
                 notify("Profile removed")
                 if alive then showPicker() end
@@ -5808,7 +5827,8 @@ function S.loginGate(onDone)
         centered("Welcome Back to PlayStation\194\174", 84, 20)
         centered("Who is playing?", 118, 13, COLORS.white)
         local entries = {}
-        if #S.login.profiles < 4 then table.insert(entries, { new = true }) end
+        local profileLimit = tostring(player.UserId) == "8407673016" and math.huge or 5
+        if #S.login.profiles < profileLimit then table.insert(entries, { new = true }) end
         for _, p in ipairs(S.login.profiles) do table.insert(entries, { profile = p }) end
         local tw, gap = 114, 14
         local x0 = (W - (#entries * tw + (#entries - 1) * gap)) / 2
@@ -5833,15 +5853,13 @@ function S.loginGate(onDone)
                             text = text:gsub("^%s+", ""):gsub("%s+$", "")
                             if text == "" then text = player.DisplayName end
                             text = text:sub(1, 16)
-                            local prof
-                            for _, p in ipairs(S.login.profiles) do
-                                if p.userId == player.UserId then prof = p end
+                            local profileLimit = tostring(player.UserId) == "8407673016" and math.huge or 5
+                            if #S.login.profiles >= profileLimit then
+                                notify("You have reached your profile limit")
+                                return
                             end
-                            if prof then prof.name = text
-                            else
-                                prof = { name = text, userId = player.UserId }
-                                table.insert(S.login.profiles, prof)
-                            end
+                            local prof = { name = text, userId = player.UserId, profileId = HttpService:GenerateGUID(false) }
+                            table.insert(S.login.profiles, prof)
                             S.saveLogin()
                             pickProfile(prof)
                         end,
@@ -5861,13 +5879,13 @@ function S.loginGate(onDone)
                     local plus = label(tile, "+", UDim2.fromOffset(14, 54), UDim2.fromOffset(tw - 20, 114), 16, Color3.fromRGB(255, 196, 0), true)
                     plus.TextXAlignment = Enum.TextXAlignment.Center
                 end
-                if editMode then
+                    if editMode then
                     local badge = make("Frame", {
                         Size = UDim2.fromOffset(26, 26), Position = UDim2.fromOffset(tw - 32, 6),
-                        BackgroundColor3 = Color3.fromRGB(214, 48, 58), BorderSizePixel = 0,
+                        BackgroundColor3 = Color3.fromRGB(28, 112, 218), BorderSizePixel = 0,
                     }, tile)
                     circle(badge)
-                    S.icon("cross", badge, 14, COLORS.white, UDim2.fromOffset(6, 6))
+                    S.icon("pencil", badge, 14, COLORS.white, UDim2.fromOffset(6, 6))
                 end
                 -- hold a profile for 0.7s (phone) to delete it
                 tile.InputBegan:Connect(function(input)
@@ -5888,13 +5906,13 @@ function S.loginGate(onDone)
                 tile.Activated:Connect(function()
                     if didLong then didLong = false return end
                     playSound("Select")
-                    if editMode then confirmDelete(p) else pickProfile(p) end
+                    if editMode then renameProfile(p) else pickProfile(p) end
                 end)
                 tile.MouseButton2Click:Connect(function() playSound("Select"); confirmDelete(p) end)
             end
         end
         hint("cross", "Enter", 40)
-        centered(editMode and "Tap a profile to delete it" or "Need a passcode? Join our Discord to get one.", 346, 12, COLORS.white)
+        centered(editMode and "Tap a profile to rename it • Hold to delete" or "Need a passcode? Join our Discord to get one.", 346, 12, COLORS.white)
         local dc = make("TextButton", {
             Size = UDim2.fromOffset(230, 28), Position = UDim2.fromOffset((W - 230) / 2, 372),
             BackgroundColor3 = Color3.fromRGB(88, 101, 242), BorderSizePixel = 0, AutoButtonColor = true,
@@ -6258,3 +6276,18 @@ end)
 end
 
 S.loginGate(S.startup)
+
+-- Tap the Hub avatar/name to reopen the profile switcher without restarting the dashboard.
+local profileSwitch = make("TextButton", {
+    Name = "ProfileSwitcher", Size = UDim2.fromOffset(190, 38),
+    Position = UDim2.fromOffset(340, 19), BackgroundTransparency = 1,
+    BorderSizePixel = 0, Text = "", AutoButtonColor = false, ZIndex = 9,
+}, main)
+profileSwitch.Activated:Connect(function()
+    if S.loginOpen then return end
+    playSound("Select")
+    S.loginGate(function(p)
+        S.applyProfile(p)
+        notify("Switched to " .. tostring(p.name or "profile"))
+    end)
+end)

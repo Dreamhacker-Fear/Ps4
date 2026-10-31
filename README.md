@@ -61,11 +61,20 @@ The Worker uses the Durable Object binding and migration declared in `wrangler.j
 
 The `/setup` route is disabled by default in the Worker. Only enable it temporarily when re-registering the Discord command, then disable it again.
 
+## Owner and Premium features
+
+- The Owner panel lists accounts that have signed in to this Worker, with Roblox usernames resolved for display.
+- The Owner can grant or revoke Premium for registered accounts; the Owner account itself is always Premium.
+- Owner actions are recorded in Durable Object storage and retained for up to 30 days.
+- Owner access is checked server-side using the session token and configured Owner Roblox User ID (`8407673016`). A client-side flag alone does not grant Owner access.
+
 ## Validation and release notes
 
 - This repository contains Roblox/Luau client code and a JavaScript Cloudflare Worker.
 - GitHub Actions checks are only available when workflows are configured and triggered. A missing workflow run is not a passing build.
 - A successful JavaScript syntax check does not prove the Luau UI works in the Roblox runtime.
-- The Owner search input is created before its `FocusLost` handler is connected, preventing a nil-reference crash during dashboard startup.
+- Owner UI references are forward-declared before callbacks use them, so Lua resolves them to the intended local controls and cache.
+- Owner API requests are forwarded to their matching Durable Object routes; they are not treated as ordinary session checks.
+- The Worker validates the Owner session and configured Roblox User ID on every Owner-only operation.
 - Test profile creation, profile switching, passcode login, session resume, and Owner-only endpoints in a non-production test environment before merging or deploying.
 - Changes on `feature/owner-system` are proposed through [PR #2](https://github.com/Dreamhacker-Fear/Ps4/pull/2). The default `main` branch is not changed until that pull request is merged.

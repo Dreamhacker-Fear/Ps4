@@ -255,6 +255,25 @@ function Client.ownerLogs(uid)
     return ownerRequest("/owner/logs", uid)
 end
 
+-- Compatibility layer for the refreshed dashboard.
+-- The current Worker supports owner account management, but not script-friend APIs.
+function Client.api(uid, path, extra)
+    if path == "/presence" then
+        local owner = Client.ownerAccounts(uid)
+        return {
+            ok = true,
+            owner = owner.ok == true,
+            incoming = {},
+            friends = {},
+        }
+    end
+    return {
+        ok = false,
+        reason = "not_supported",
+        message = "This social feature is not available on the current Orbis server yet."
+    }
+end
+
 -- Delete saved session
 function Client.clear(uid)
     clearToken(uid)

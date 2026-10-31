@@ -66,5 +66,6 @@ The `/setup` route is disabled by default in the Worker. Only enable it temporar
 - This repository contains Roblox/Luau client code and a JavaScript Cloudflare Worker.
 - GitHub Actions checks are only available when workflows are configured and triggered. A missing workflow run is not a passing build.
 - A successful JavaScript syntax check does not prove the Luau UI works in the Roblox runtime.
+- The Owner search input is created before its `FocusLost` handler is connected, preventing a nil-reference crash during dashboard startup.
 - Test profile creation, profile switching, passcode login, session resume, and Owner-only endpoints in a non-production test environment before merging or deploying.
 - Changes on `feature/owner-system` are proposed through [PR #2](https://github.com/Dreamhacker-Fear/Ps4/pull/2). The default `main` branch is not changed until that pull request is merged.

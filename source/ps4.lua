@@ -1419,7 +1419,6 @@ function S.openOwnerPanel()
     end)
 end
 
-ownerSearch.FocusLost:Connect(function() S.refreshOwnerAccounts() end)
 
 function S.openPlayerOptions(userId, username, display)
     openPanel(shortText(display, 22), {
@@ -1462,6 +1461,7 @@ local ownerSearch = make("TextBox", {
 }, ownerPage)
 round(ownerSearch, 5)
 make("UIPadding", { PaddingLeft = UDim.new(0, 10) }, ownerSearch)
+ownerSearch.FocusLost:Connect(function() S.refreshOwnerAccounts() end)
 local ownerScroll = makeListScroll(ownerPage, 118, H - 188)
 local ownerAccountsCache = {}
 
